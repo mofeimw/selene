@@ -1,0 +1,469 @@
+#+title: Selene Emacs configuration
+#+author: mofei
+
+Selene: Greek goddess of the Moon
+
+default init.el
+#+begin_src emacs-lisp :tangle ~/.config/doom/init.el :mkdirp yes
+;;; init.el -*- lexical-binding: t; -*-
+
+;; This file controls what Doom modules are enabled and what order they load
+;; in. Remember to run 'doom sync' after modifying it!
+
+;; NOTE Press 'SPC h d h' (or 'C-h d h' for non-vim users) to access Doom's
+;;      documentation. There you'll find a link to Doom's Module Index where all
+;;      of our modules are listed, including what flags they support.
+
+;; NOTE Move your cursor over a module's name (or its flags) and press 'K' (or
+;;      'C-c c k' for non-vim users) to view its documentation. This works on
+;;      flags as well (those symbols that start with a plus).
+;;
+;;      Alternatively, press 'gd' (or 'C-c c d') on a module to browse its
+;;      directory (for easy access to its source code).
+
+(doom! :input
+       ;;bidi              ; (tfel ot) thgir etirw uoy gnipleh
+       ;;chinese
+       ;;japanese
+       ;;layout            ; auie,ctsrnm is the superior home row
+
+       :completion
+       company           ; the ultimate code completion backend
+       ;;helm              ; the *other* search engine for love and life
+       ;;ido               ; the other *other* search engine...
+       ;;ivy               ; a search engine for love and life
+       vertico           ; the search engine of the future
+
+       :ui
+       ;;deft              ; notational velocity for Emacs
+       doom              ; what makes DOOM look the way it does
+       doom-dashboard    ; a nifty splash screen for Emacs
+       ;;doom-quit         ; DOOM quit-message prompts when you quit Emacs
+       ;;(emoji +unicode)  ; 🙂
+       hl-todo           ; highlight TODO/FIXME/NOTE/DEPRECATED/HACK/REVIEW
+       ;;hydra
+       ;;indent-guides     ; highlighted indent columns
+       ;;ligatures         ; ligatures and symbols to make your code pretty again
+       ;;minimap           ; show a map of the code on the side
+       modeline          ; snazzy, Atom-inspired modeline, plus API
+       ;;nav-flash         ; blink cursor line after big motions
+       ;;neotree           ; a project drawer, like NERDTree for vim
+       ophints           ; highlight the region an operation acts on
+       (popup +defaults)   ; tame sudden yet inevitable temporary windows
+       ;;tabs              ; a tab bar for Emacs
+       ;;treemacs          ; a project drawer, like neotree but cooler
+       ;;unicode           ; extended unicode support for various languages
+       (vc-gutter +pretty) ; vcs diff in the fringe
+       vi-tilde-fringe   ; fringe tildes to mark beyond EOB
+       ;;window-select     ; visually switch windows
+       workspaces        ; tab emulation, persistence & separate workspaces
+       ;;zen               ; distraction-free coding or writing
+
+       :editor
+       (evil +everywhere); come to the dark side, we have cookies
+       file-templates    ; auto-snippets for empty files
+       fold              ; (nigh) universal code folding
+       ;;(format +onsave)  ; automated prettiness
+       ;;god               ; run Emacs commands without modifier keys
+       ;;lispy             ; vim for lisp, for people who don't like vim
+       ;;multiple-cursors  ; editing in many places at once
+       ;;objed             ; text object editing for the innocent
+       ;;parinfer          ; turn lisp into python, sort of
+       ;;rotate-text       ; cycle region at point between text candidates
+       snippets          ; my elves. They type so I don't have to
+       ;;word-wrap         ; soft wrapping with language-aware indent
+
+       :emacs
+       dired             ; making dired pretty [functional]
+       electric          ; smarter, keyword-based electric-indent
+       ;;ibuffer         ; interactive buffer management
+       undo              ; persistent, smarter undo for your inevitable mistakes
+       vc                ; version-control and Emacs, sitting in a tree
+
+       :term
+       ;;eshell            ; the elisp shell that works everywhere
+       ;;shell             ; simple shell REPL for Emacs
+       ;;term              ; basic terminal emulator for Emacs
+       ;;vterm             ; the best terminal emulation in Emacs
+
+       :checkers
+       syntax              ; tasing you for every semicolon you forget
+       ;;(spell +flyspell) ; tasing you for misspelling mispelling
+       ;;grammar           ; tasing grammar mistake every you make
+
+       :tools
+       ;;ansible
+       ;;biblio            ; Writes a PhD for you (citation needed)
+       ;;collab            ; buffers with friends
+       ;;debugger          ; FIXME stepping through code, to help you add bugs
+       ;;direnv
+       ;;docker
+       ;;editorconfig      ; let someone else argue about tabs vs spaces
+       ;;ein               ; tame Jupyter notebooks with emacs
+       (eval +overlay)     ; run code, run (also, repls)
+       ;;gist              ; interacting with github gists
+       lookup              ; navigate your code and its documentation
+       ;;lsp               ; M-x vscode
+       magit             ; a git porcelain for Emacs
+       ;;make              ; run make tasks from Emacs
+       ;;pass              ; password manager for nerds
+       ;;pdf               ; pdf enhancements
+       ;;prodigy           ; FIXME managing external services & code builders
+       ;;rgb               ; creating color strings
+       ;;taskrunner        ; taskrunner for all your projects
+       ;;terraform         ; infrastructure as code
+       ;;tmux              ; an API for interacting with tmux
+       ;;tree-sitter       ; syntax and parsing, sitting in a tree...
+       ;;upload            ; map local to remote projects via ssh/ftp
+
+       :os
+       (:if IS-MAC macos)  ; improve compatibility with macOS
+       ;;tty               ; improve the terminal Emacs experience
+
+       :lang
+       ;;agda              ; types of types of types of types...
+       ;;beancount         ; mind the GAAP
+       ;;(cc +lsp)         ; C > C++ == 1
+       ;;clojure           ; java with a lisp
+       ;;common-lisp       ; if you've seen one lisp, you've seen them all
+       ;;coq               ; proofs-as-programs
+       ;;crystal           ; ruby at the speed of c
+       ;;csharp            ; unity, .NET, and mono shenanigans
+       ;;data              ; config/data formats
+       ;;(dart +flutter)   ; paint ui and not much else
+       ;;dhall
+       ;;elixir            ; erlang done right
+       ;;elm               ; care for a cup of TEA?
+       emacs-lisp        ; drown in parentheses
+       ;;erlang            ; an elegant language for a more civilized age
+       ;;ess               ; emacs speaks statistics
+       ;;factor
+       ;;faust             ; dsp, but you get to keep your soul
+       ;;fortran           ; in FORTRAN, GOD is REAL (unless declared INTEGER)
+       ;;fsharp            ; ML stands for Microsoft's Language
+       ;;fstar             ; (dependent) types and (monadic) effects and Z3
+       ;;gdscript          ; the language you waited for
+       ;;(go +lsp)         ; the hipster dialect
+       ;;(graphql +lsp)    ; Give queries a REST
+       ;;(haskell +lsp)    ; a language that's lazier than I am
+       ;;hy                ; readability of scheme w/ speed of python
+       ;;idris             ; a language you can depend on
+       ;;json              ; At least it ain't XML
+       ;;(java +lsp)       ; the poster child for carpal tunnel syndrome
+       ;;javascript        ; all(hope(abandon(ye(who(enter(here))))))
+       ;;julia             ; a better, faster MATLAB
+       ;;kotlin            ; a better, slicker Java(Script)
+       ;;latex             ; writing papers in Emacs has never been so fun
+       ;;lean              ; for folks with too much to prove
+       ;;ledger            ; be audit you can be
+       ;;lua               ; one-based indices? one-based indices
+       markdown          ; writing docs for people to ignore
+       ;;nim               ; python + lisp at the speed of c
+       ;;nix               ; I hereby declare "nix geht mehr!"
+       ;;ocaml             ; an objective camel
+       org               ; organize your plain life in plain text
+       ;;php               ; perl's insecure younger brother
+       ;;plantuml          ; diagrams for confusing people more
+       ;;purescript        ; javascript, but functional
+       ;;python            ; beautiful is better than ugly
+       ;;qt                ; the 'cutest' gui framework ever
+       ;;racket            ; a DSL for DSLs
+       ;;raku              ; the artist formerly known as perl6
+       ;;rest              ; Emacs as a REST client
+       ;;rst               ; ReST in peace
+       ;;(ruby +rails)     ; 1.step {|i| p "Ruby is #{i.even? ? 'love' : 'life'}"}
+       ;;(rust +lsp)       ; Fe2O3.unwrap().unwrap().unwrap().unwrap()
+       ;;scala             ; java, but good
+       ;;(scheme +guile)   ; a fully conniving family of lisps
+       sh                ; she sells {ba,z,fi}sh shells on the C xor
+       ;;sml
+       ;;solidity          ; do you need a blockchain? No.
+       ;;swift             ; who asked for emoji variables?
+       ;;terra             ; Earth and Moon in alignment for performance.
+       ;;web               ; the tubes
+       ;;yaml              ; JSON, but readable
+       ;;zig               ; C, but simpler
+
+       :email
+       ;;(mu4e +org +gmail)
+       ;;notmuch
+       ;;(wanderlust +gmail)
+
+       :app
+       ;;calendar
+       ;;emms
+       ;;everywhere        ; *leave* Emacs!? You must be joking
+       ;;irc               ; how neckbeards socialize
+       ;;(rss +org)        ; emacs as an RSS reader
+       ;;twitter           ; twitter client https://twitter.com/vnought
+
+       :config
+       ;;literate
+       (default +bindings +smartparens))
+#+end_src
+
+default packages.el
+#+begin_src emacs-lisp :tangle ~/.config/doom/packages.el
+;; -*- no-byte-compile: t; -*-
+;;; $DOOMDIR/packages.el
+
+;; To install a package with Doom you must declare them here and run 'doom sync'
+;; on the command line, then restart Emacs for the changes to take effect -- or
+;; use 'M-x doom/reload'.
+
+
+;; To install SOME-PACKAGE from MELPA, ELPA or emacsmirror:
+;(package! some-package)
+(package! rainbow-mode)
+
+;; To install a package directly from a remote git repo, you must specify a
+;; `:recipe'. You'll find documentation on what `:recipe' accepts here:
+;; https://github.com/radian-software/straight.el#the-recipe-format
+;(package! another-package
+;  :recipe (:host github :repo "username/repo"))
+
+;; If the package you are trying to install does not contain a PACKAGENAME.el
+;; file, or is located in a subdirectory of the repo, you'll need to specify
+;; `:files' in the `:recipe':
+;(package! this-package
+;  :recipe (:host github :repo "username/repo"
+;           :files ("some-file.el" "src/lisp/*.el")))
+
+;; If you'd like to disable a package included with Doom, you can do so here
+;; with the `:disable' property:
+;(package! builtin-package :disable t)
+
+;; You can override the recipe of a built in package without having to specify
+;; all the properties for `:recipe'. These will inherit the rest of its recipe
+;; from Doom or MELPA/ELPA/Emacsmirror:
+;(package! builtin-package :recipe (:nonrecursive t))
+;(package! builtin-package-2 :recipe (:repo "myfork/package"))
+
+;; Specify a `:branch' to install a package from a particular branch or tag.
+;; This is required for some packages whose default branch isn't 'master' (which
+;; our package manager can't deal with; see radian-software/straight.el#279)
+;(package! builtin-package :recipe (:branch "develop"))
+
+;; Use `:pin' to specify a particular commit to install.
+;(package! builtin-package :pin "1a2b3c4d5e")
+
+
+;; Doom's packages are pinned to a specific commit and updated from release to
+;; release. The `unpin!' macro allows you to unpin single packages...
+;(unpin! pinned-package)
+;; ...or multiple packages
+;(unpin! pinned-package another-pinned-package)
+;; ...Or *all* packages (NOT RECOMMENDED; will likely break things)
+;(unpin! t)
+#+end_src
+
+colorscheme
+#+begin_src emacs-lisp :tangle ~/.config/doom/themes/nyx-theme.el :mkdirp yes
+(require 'doom-themes)
+
+(defgroup nyx-theme nil
+  "Options for doom-themes"
+  :group 'doom-themes)
+
+(def-doom-theme nyx
+  "A dark theme inspired by the moon"
+
+  ;; name        default   256       16
+  ((bg         '("#18131A" nil       nil            ))
+   (bg-alt     '("#18131A" nil       nil            ))
+   (base0      '("#261e29" "#261e29" "black"        ))
+   (base1      '("#2f2633" "#2f2633" "brightblack"  ))
+   (base2      '("#3d3142" "#3d3142" "brightblack"  ))
+   (base3      '("#4c3e52" "#4c3e52" "brightblack"  ))
+   (base4      '("#58495e" "#58495e" "brightblack"  ))
+   (base5      '("#6c5c73" "#6c5c73" "brightblack"  ))
+   (base6      '("#76667d" "#76667d" "brightblack"  ))
+   (base7      '("#b0bae3" "#b0bae3" "brightblack"  ))
+   (base8      '("#c0caf5" "#c0caf5" "white"        ))
+   (fg         '("#a9b1d6" "#a9b1d6" "white"        ))
+   (fg-alt     '("#c0caf5" "#c0caf5" "brightwhite"  ))
+
+   (grey       '("#8189af" "#8189af" "brightblack"  ))
+   (red        '("#f7768e" "#f7768e" "red"          ))
+   (orange     '("#ff9e64" "#ff9e64" "brightred"    ))
+   (green      '("#73daca" "#73daca" "green"        ))
+   (teal       '("#2ac3de" "#2ac3de" "brightgreen"  ))
+   (yellow     '("#e0af68" "#e0af68" "yellow"       ))
+   (baby-blue  '("#342838" "#342838" "brightblue"   ))
+   (blue       '("#7aa2f7" "#7aa2f7" "brightblue"   ))
+   (dark-blue  '("#565f89" "#565f89" "blue"         ))
+   (magenta    '("#bb9af7" "#bb9af7" "magenta"      ))
+   (violet     '("#9aa5ce" "#9aa5ce" "brightmagenta"))
+   (cyan       '("#b4f9f8" "#b4f9f8" "brightcyan"   ))
+   (dark-cyan  '("#7dcfff" "#7dcfff" "cyan"         ))
+
+   (highlight      cyan)
+   (vertical-bar   base2)
+   (selection      dark-blue)
+   (builtin        magenta)
+   (comments       base4)
+   (doc-comments   (doom-lighten comments 0.2))
+   (constants      violet)
+   (functions      green)
+   (keywords       blue)
+   (methods        cyan)
+   (operators      blue)
+   (type           red)
+   (strings        yellow)
+   (variables      magenta)
+   (numbers        magenta)
+   (region         baby-blue)
+   (error          red)
+   (warning        yellow)
+   (success        green)
+   (vc-modified    orange)
+   (vc-added       green)
+   (vc-deleted     red)
+
+   (modeline-fg     nil)
+   (modeline-fg-alt (doom-blend violet base4 0.2))
+
+   (modeline-bg (doom-darken bg-alt 0.5))
+   (modeline-bg-l base2)
+   (modeline-bg-inactive (doom-darken bg 0.1))
+   (modeline-bg-inactive-l `(,(doom-darken (car bg-alt) 0.05) ,@(cdr base1))))
+
+  ((font-lock-comment-face
+    :foreground comments
+    :weight 'bold)
+   (font-lock-doc-face
+    :inherit 'font-lock-comment-face
+    :foreground doc-comments
+    :weight 'regular)
+
+   ((line-number &override) :foreground base4)
+   ((line-number-current-line &override) :foreground cyan)
+
+   (doom-modeline-bar :background highlight)
+   (doom-modeline-project-dir :foreground violet :weight 'bold)
+   (doom-modeline-buffer-file :weight 'regular)
+
+   (mode-line :background modeline-bg :foreground modeline-fg)
+   (mode-line-inactive :background modeline-bg-inactive :foreground modeline-fg-alt)
+   (mode-line-emphasis :foreground highlight)
+
+   (magit-blame-heading :foreground orange :background bg-alt)
+   (magit-diff-removed :foreground (doom-darken red 0.2) :background (doom-blend red bg 0.1))
+   (magit-diff-removed-highlight :foreground red :background (doom-blend red bg 0.2) :bold bold)
+
+   (evil-ex-lazy-highlight :background baby-blue)
+
+   (css-proprietary-property :foreground orange)
+   (css-property             :foreground green)
+   (css-selector             :foreground blue)
+
+   (markdown-markup-face     :foreground base5)
+   (markdown-header-face     :inherit 'bold :foreground red)
+   (markdown-code-face       :background base1)
+   (mmm-default-submode-face :background base1)
+
+   (org-block            :background (doom-darken bg-alt 0.25))
+   (org-level-1          :foreground base8 :weight 'bold :height 1.25)
+   (org-level-2          :foreground base6 :weight 'bold :height 1.1)
+   (org-level-3          :foreground base5 :bold bold :height 1.0)
+   (org-level-4          :foreground base4 :bold bold :height 1.0)
+   (org-ellipsis         :underline nil :background bg-alt     :foreground grey)
+   (org-quote            :background base1)
+   (org-checkbox-statistics-done :foreground base2 :weight 'normal)
+   (org-done nil)
+   (org-done :foreground green :weight 'normal)
+   (org-headline-done :foreground base3 :weight 'normal :strike-through t)
+   (org-date :foreground orange)
+   (org-code :foreground dark-blue)
+   (org-special-keyword :foreground base8 :underline t)
+   (org-document-title :foreground base8 :weight 'bold :height 1.5)
+   (org-document-info-keyword :foreground base4 :height 0.75)
+   (org-block-begin-line :foreground base4 :height 0.65)
+   (org-meta-line :foreground base4 :height 0.65)
+   (org-list-dt :foreground magenta)
+
+   (org-todo-keyword-faces
+    '(("TODO" :foreground "#7c7c75" :weight normal :underline t)
+      ("WAITING" :foreground "#9f7efe" :weight normal :underline t)
+      ("INPROGRESS" :foreground "#0098dd" :weight normal :underline t)
+      ("DONE" :foreground "#50a14f" :weight normal :underline t)
+      ("CANCELLED" :foreground "#ff6480" :weight normal :underline t)))
+
+   (org-priority-faces '((65 :foreground "#e45649")
+                         (66 :foreground "#da8548")
+                         (67 :foreground "#0098dd")))
+
+   (helm-candidate-number :background blue :foreground bg)
+
+   (web-mode-current-element-highlight-face :background dark-blue :foreground bg)
+
+   (wgrep-face :background base1)
+
+   (ediff-current-diff-A        :foreground red   :background (doom-lighten red 0.8))
+   (ediff-current-diff-B        :foreground green :background (doom-lighten green 0.8))
+   (ediff-current-diff-C        :foreground blue  :background (doom-lighten blue 0.8))
+   (ediff-current-diff-Ancestor :foreground teal  :background (doom-lighten teal 0.8))
+
+   (tooltip :background base1 :foreground fg)
+
+   (ivy-posframe :background base0)
+
+   (lsp-ui-doc-background      :background base0)
+   (lsp-face-highlight-read    :background (doom-blend red bg 0.3))
+   (lsp-face-highlight-textual :inherit 'lsp-face-highlight-read)
+   (lsp-face-highlight-write   :inherit 'lsp-face-highlight-read)
+ ))
+#+end_src
+
+;;
+;; my config
+;;
+user info
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(setq user-full-name "Mofei Wang"
+      user-mail-address "mofei.mw@gmail.com")
+#+end_src
+
+fonts
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(setq doom-font (font-spec :family "Fira Code" :size 13))
+#+end_src
+
+color scheme
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(setq doom-theme 'nyx)
+#+end_src
+
+org directory
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(setq org-directory "~/org/")
+#+end_src
+
+start in full screen
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(push '(fullscreen . maximized) default-frame-alist)
+#+end_src
+
+customize dashboard
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-shortmenu)
+(remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-loaded)
+(remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-footer)
+
+(add-hook! '+doom-dashboard-functions :append
+  (insert "\n" (+doom-dashboard--center +doom-dashboard--width "< w e l c o m e,  m o f e i >"))
+  (insert "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n" (+doom-dashboard--center +doom-dashboard--width "")))
+
+(setq fancy-splash-image "~/selene/selene.png")
+#+end_src
+
+just lemme quit
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(setq confirm-kill-emacs nil)
+#+end_src
+#+end_src
+
+relative line numbers
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(setq display-line-numbers-type 'relative)
+#+end_src
