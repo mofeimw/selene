@@ -87,7 +87,7 @@ default init.el
 
        :checkers
        syntax              ; tasing you for every semicolon you forget
-       (spell +flyspell) ; tasing you for misspelling mispelling
+       ;;(spell +flyspell) ; tasing you for misspelling mispelling
        ;;grammar           ; tasing grammar mistake every you make
 
        :tools
@@ -448,36 +448,28 @@ user info
       user-mail-address "mofei.mw@gmail.com")
 #+end_src
 
-settings
+interface
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq display-line-numbers-type 'relative)
-(setq confirm-kill-emacs nil)
+(setq doom-theme 'nyx)
+
+(setq doom-font (font-spec :family "Fira Code" :size 13 :height 1.0)
+      doom-variable-pitch-font (font-spec :family "Palatino" :height 1.4))
 
 (push '(fullscreen . maximized) default-frame-alist)
 #+end_src
 
-color scheme
+general settings
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq doom-theme 'nyx)
+(setq display-line-numbers-type 'relative)
+(setq confirm-kill-emacs nil)
 #+end_src
 
-fonts
+mac specific settings
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq doom-font (font-spec :family "Fira Code" :size 13 :height 1.0)
-      doom-variable-pitch-font (font-spec :family "ETBembo" :height 1.4))
-#+end_src
-
-custom doom dashboard
-#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-shortmenu)
-(remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-loaded)
-(remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-footer)
-
-(add-hook! '+doom-dashboard-functions :append
-  (insert "" (+doom-dashboard--center +doom-dashboard--width "< w e l c o m e,  m o f e i >"))
-  (insert "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n" (+doom-dashboard--center +doom-dashboard--width "")))
-
-(setq fancy-splash-image "~/selene.png")
+(when (equal system-type 'darwin)
+  ; make command [⌘] => meta & option [⌥] => super
+  (setq mac-command-modifier 'meta)
+  (setq mac-option-modifier 'super))
 #+end_src
 
 fix focus when starting emacsclient
@@ -500,29 +492,43 @@ https://korewanetadesu.com/emacs-on-os-x.html
     (ns-raise-emacs)))
 #+end_src
 
-mac specific settings
+hooks
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(when (equal system-type 'darwin)
-  ; make command [⌘] => meta & option [⌥] => super
-  (setq mac-command-modifier 'meta)
-  (setq mac-option-modifier 'super))
+(add-hook 'buffer-list-update-hook
+  (lambda ()
+    (when (eq major-mode 'org-mode)
+      (setq-local line-spacing 6))
+    (when (not (eq major-mode 'org-mode))
+      (setq-local line-spacing 0))))
+
+;; fixes issue of small variable-pitch text after new client frame
+(add-hook 'server-after-make-frame-hook
+    (lambda ()
+      (setq-local mixed-pitch-set-height t)
+      (set-face-attribute 'variable-pitch nil :height 1.4)))
+#+end_src
+
+custom doom dashboard
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-shortmenu)
+(remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-loaded)
+(remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-footer)
+
+(add-hook! '+doom-dashboard-functions :append
+  (insert "" (+doom-dashboard--center +doom-dashboard--width "< w e l c o m e,  m o f e i >"))
+  (insert "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n" (+doom-dashboard--center +doom-dashboard--width "")))
+
+(setq fancy-splash-image "~/selene.png")
 #+end_src
 
 org mode
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (setq org-directory "~/org/")
-
 (setq org-log-done 'time)
 #+end_src
 
 make org pretty
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(add-hook 'org-mode-hook (lambda () (setq-local line-spacing 6)))
-(add-hook 'buffer-list-update-hook
-  (lambda ()
-    (when (not (eq major-mode 'org-mode))
-      (setq-local line-spacing nil))))
-
 (setq org-hide-emphasis-markers t)
 
 (font-lock-add-keywords 'org-mode
@@ -530,13 +536,13 @@ make org pretty
     (0 (prog1 () (compose-region (match-beginning 1) (match-end 1) "•"))))))
 #+end_src
 
-mixed-pitch
+mixed-pitch for org
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (use-package! mixed-pitch
   :hook (org-mode . mixed-pitch-mode)
   :config
-  (setq mixed-pitch-set-height t)
-  (set-face-attribute 'variable-pitch nil :height 1.4))
+    (setq mixed-pitch-set-height t)
+    (set-face-attribute 'variable-pitch nil :height 1.4))
 #+end_src
 
 org-capture
