@@ -1,7 +1,6 @@
 #+title: Selene Emacs configuration
 #+author: mofei
 * Selene: Greek goddess of the Moon
-
 ** shell script
 #+begin_src shell :tangle ~/selene.sh :tangle-mode (identity #o755)
 #!/bin/sh
@@ -30,7 +29,6 @@ emacs --daemon
 
 ** init.el
 #+begin_src emacs-lisp :tangle ~/.config/doom/init.el :mkdirp yes
-;;; init.el -*- lexical-binding: t; -*-
 (doom! :input
 
        :completion company ivy vertico
@@ -69,26 +67,18 @@ emacs --daemon
 #+end_src
 
 ** config.el
-user info
-#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq user-full-name "Mofei Wang"
-      user-mail-address "mofei.mw@gmail.com")
-#+end_src
-
-interface
+*** general settings
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (setq doom-theme 'nyx)
-
 (setq doom-font (font-spec :family "Fira Code" :size 13 :height 1.0)
       doom-variable-pitch-font (font-spec :family "Palatino" :height 1.4))
 
-(push '(fullscreen . maximized) default-frame-alist)
-#+end_src
-
-general settings
-#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq display-line-numbers-type 'relative)
+(setq fancy-splash-image "~/selene.png")
 (setq confirm-kill-emacs nil)
+
+(setq display-line-numbers-type 'relative)
+
+(push '(fullscreen . maximized) default-frame-alist)
 #+end_src
 
 mac specific settings
@@ -119,7 +109,30 @@ https://korewanetadesu.com/emacs-on-os-x.html
     (ns-raise-emacs)))
 #+end_src
 
-hooks
+tabs
+https://dougie.io/emacs/indentation/
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(setq custom-tab-width 2)
+
+(defun disable-tabs () (setq indent-tabs-mode nil))
+(defun enable-tabs  ()
+  (local-set-key (kbd "TAB") 'tab-to-tab-stop)
+  (setq indent-tabs-mode t)
+  (setq tab-width custom-tab-width))
+
+(add-hook 'prog-mode-hook 'enable-tabs)
+(add-hook 'lisp-mode-hook 'disable-tabs)
+(add-hook 'emacs-lisp-mode-hook 'disable-tabs)
+
+(setq-default python-indent-offset custom-tab-width)
+(setq-default js-indent-level custom-tab-width)
+
+(setq-default electric-indent-inhibit t)
+(setq-default evil-shift-width custom-tab-width)
+#+end_src
+
+*** hooks
+comfier line height in org mode
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (add-hook 'buffer-list-update-hook
   (lambda ()
@@ -127,15 +140,17 @@ hooks
       (setq-local line-spacing 6))
     (when (not (eq major-mode 'org-mode))
       (setq-local line-spacing 0))))
+#+end_src
 
-;; fixes issue of small variable-pitch text after new client frame
+fix issue of small variable-pitch text after new client frame
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (add-hook 'server-after-make-frame-hook
     (lambda ()
       (setq-local mixed-pitch-set-height t)
       (set-face-attribute 'variable-pitch nil :height 1.4)))
 #+end_src
 
-custom doom dashboard
+doom dashboard
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-shortmenu)
 (remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-loaded)
@@ -144,11 +159,20 @@ custom doom dashboard
 (add-hook! '+doom-dashboard-functions :append
   (insert "" (+doom-dashboard--center +doom-dashboard--width "< w e l c o m e,  m o f e i >"))
   (insert "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n" (+doom-dashboard--center +doom-dashboard--width "")))
-
-(setq fancy-splash-image "~/selene.png")
 #+end_src
 
-org mode
+misc.
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(remove-hook 'doom-first-input-hook #'evil-snipe-mode) ; evil s functionality
+#+end_src
+
+*** evil
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(define-key evil-normal-state-map (kbd "_d") "\"_d")
+(define-key evil-normal-state-map (kbd "x") "\"_x")
+#+end_src
+
+*** org
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (setq org-directory "~/org/")
 (setq org-log-done 'time)
@@ -194,11 +218,11 @@ org-capture
    (bg-alt     '("#18131A" nil       nil            ))
    (base0      '("#261e29" "#261e29" "black"        ))
    (base1      '("#2f2633" "#2f2633" "brightblack"  ))
-   (base2      '("#3d3142" "#3d3142" "brightblack"  ))
-   (base3      '("#4c3e52" "#4c3e52" "brightblack"  ))
-   (base4      '("#58495e" "#58495e" "brightblack"  ))
-   (base5      '("#6c5c73" "#6c5c73" "brightblack"  ))
-   (base6      '("#76667d" "#76667d" "brightblack"  ))
+   (base2      '("#5e4b66" "#5e4b66" "brightblack"  ))
+   (base3      '("#745f7d" "#745f7d" "brightblack"  ))
+   (base4      '("#8b7694" "#8b7694" "brightblack"  ))
+   (base5      '("#9483a8" "#9483a8" "brightblack"  ))
+   (base6      '("#ae9fc9" "#ae9fc9" "brightblack"  ))
    (base7      '("#b0bae3" "#b0bae3" "brightblack"  ))
    (base8      '("#c0caf5" "#c0caf5" "white"        ))
    (fg         '("#a9b1d6" "#a9b1d6" "white"        ))
@@ -251,7 +275,7 @@ org-capture
 
   ((font-lock-comment-face
     :foreground comments
-    :weight 'bold)
+    :weight 'regular)
    (font-lock-doc-face
     :inherit 'font-lock-comment-face
     :foreground doc-comments
@@ -283,11 +307,11 @@ org-capture
    (markdown-code-face       :background base1)
    (mmm-default-submode-face :background base1)
 
-   (org-block            :background (doom-darken bg-alt 0.25))
+   (org-block            :background (doom-darken bg-alt 0.2))
    (org-level-1          :foreground base8 :weight 'bold :height 1.25)
    (org-level-2          :foreground base7 :weight 'bold :height 1.1)
-   (org-level-3          :foreground base5 :bold bold :height 1.0)
-   (org-level-4          :foreground base4 :bold bold :height 1.0)
+   (org-level-3          :foreground base6 :bold bold :height 1.0)
+   (org-level-4          :foreground base5 :bold bold :height 1.0)
    (org-ellipsis         :underline nil :background bg-alt     :foreground grey)
    (org-quote            :background base1)
    (org-checkbox-statistics-done :foreground base2 :weight 'normal)
