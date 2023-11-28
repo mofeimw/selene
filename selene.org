@@ -1,6 +1,5 @@
 #+title: Selene Emacs configuration
 #+author: mofei
-
 Selene: Greek goddess of the Moon
 
 default init.el
@@ -215,6 +214,7 @@ default packages.el
 ;; To install SOME-PACKAGE from MELPA, ELPA or emacsmirror:
 ;(package! some-package)
 (package! rainbow-mode)
+(package! mixed-pitch)
 
 ;; To install a package directly from a remote git repo, you must specify a
 ;; `:recipe'. You'll find documentation on what `:recipe' accepts here:
@@ -378,7 +378,7 @@ colorscheme
    (org-special-keyword :foreground base8 :underline t)
    (org-document-title :foreground base8 :weight 'bold :height 1.5)
    (org-document-info-keyword :foreground base4 :height 0.75)
-   (org-block-begin-line :foreground base4 :height 0.65)
+   (org-block-begin-line :foreground base4 :height 0.8)
    (org-meta-line :foreground base4 :height 0.65)
    (org-list-dt :foreground magenta)
 
@@ -448,9 +448,12 @@ user info
       user-mail-address "mofei.mw@gmail.com")
 #+end_src
 
-fonts
+settings
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq doom-font (font-spec :family "Fira Code" :size 13))
+(setq display-line-numbers-type 'relative)
+(setq confirm-kill-emacs nil)
+
+(push '(fullscreen . maximized) default-frame-alist)
 #+end_src
 
 color scheme
@@ -458,17 +461,13 @@ color scheme
 (setq doom-theme 'nyx)
 #+end_src
 
-org directory
+fonts
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq org-directory "~/org/")
+(setq doom-font (font-spec :family "Fira Code" :size 13 :height 1.0)
+      doom-variable-pitch-font (font-spec :family "ETBembo" :height 1.4))
 #+end_src
 
-start in full screen
-#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(push '(fullscreen . maximized) default-frame-alist)
-#+end_src
-
-customize doom dashboard
+custom doom dashboard
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-shortmenu)
 (remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-loaded)
@@ -481,17 +480,7 @@ customize doom dashboard
 (setq fancy-splash-image "~/selene.png")
 #+end_src
 
-just lemme out
-#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq confirm-kill-emacs nil)
-#+end_src
-
-use relative line numbers to jump around vertically faster
-#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq display-line-numbers-type 'relative)
-#+end_src
-
-fix focus issues when starting emacsclient
+fix focus when starting emacsclient
 https://korewanetadesu.com/emacs-on-os-x.html
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (when (featurep 'ns)
@@ -512,11 +501,42 @@ https://korewanetadesu.com/emacs-on-os-x.html
 #+end_src
 
 mac specific settings
-make command [⌘] => meta & option [⌥] => super
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (when (equal system-type 'darwin)
+  ; make command [⌘] => meta & option [⌥] => super
   (setq mac-command-modifier 'meta)
   (setq mac-option-modifier 'super))
+#+end_src
+
+org mode
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(setq org-directory "~/org/")
+
+(setq org-log-done 'time)
+#+end_src
+
+make org pretty
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(add-hook 'org-mode-hook (lambda () (setq-local line-spacing 6)))
+(add-hook 'buffer-list-update-hook
+  (lambda ()
+    (when (not (eq major-mode 'org-mode))
+      (setq-local line-spacing nil))))
+
+(setq org-hide-emphasis-markers t)
+
+(font-lock-add-keywords 'org-mode
+  '(("^ *\\([-]\\) "
+    (0 (prog1 () (compose-region (match-beginning 1) (match-end 1) "•"))))))
+#+end_src
+
+mixed-pitch
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(use-package! mixed-pitch
+  :hook (org-mode . mixed-pitch-mode)
+  :config
+  (setq mixed-pitch-set-height t)
+  (set-face-attribute 'variable-pitch nil :height 1.4))
 #+end_src
 
 org-capture
