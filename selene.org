@@ -56,7 +56,7 @@ default init.el
        (vc-gutter +pretty) ; vcs diff in the fringe
        vi-tilde-fringe   ; fringe tildes to mark beyond EOB
        ;;window-select     ; visually switch windows
-       ;;workspaces        ; tab emulation, persistence & separate workspaces
+       workspaces        ; tab emulation, persistence & separate workspaces
        zen               ; distraction-free coding or writing
 
        :editor
@@ -425,10 +425,16 @@ if [ "$1" = "launcher" ]; then
     fi
     emacsclient -e  "(select-frame-set-input-focus (selected-frame))"
     exit
+elif [ "$1" = "tangle" ]; then
+    emacsclient -e '(org-babel-tangle-file "~/selene.org")'
+    exit
 elif [ "$1" = "kill" ]; then
     emacsclient -e "(kill-emacs)"
     exit
 elif [ "$1" = "restart" ]; then
+    emacsclient -e "(kill-emacs)"
+elif [ "$1" = "retangle" ]; then
+    emacsclient -e '(org-babel-tangle-file "~/selene.org")'
     emacsclient -e "(kill-emacs)"
 fi
 
@@ -503,4 +509,18 @@ https://korewanetadesu.com/emacs-on-os-x.html
 
   (when (display-graphic-p)
     (ns-raise-emacs)))
+#+end_src
+
+mac specific settings
+make command [⌘] => meta & option [⌥] => super
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(when (equal system-type 'darwin)
+  (setq mac-command-modifier 'meta)
+  (setq mac-option-modifier 'super))
+#+end_src
+
+org-capture
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(setq org-default-notes-file (concat org-directory "/capture.org"))
+(map! :leader "x" #'org-capture)
 #+end_src
