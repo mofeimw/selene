@@ -35,7 +35,7 @@ emacs --daemon
        :ui doom doom-dashboard (emoji +unicode) hl-todo modeline ophints
            (popup +defaults) (vc-gutter +pretty) vi-tilde-fringe workspaces zen
 
-       :editor (evil +everywhere) file-templates fold word-wrap
+       :editor (evil +everywhere) file-templates fold snippets word-wrap
 
        :emacs dired electric undo vc
 
@@ -130,6 +130,19 @@ https://dougie.io/emacs/indentation/
 (setq-default evil-shift-width custom-tab-width)
 #+end_src
 
+*** keymaps
+misc.
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(map! :leader
+      "v" #'+vterm/toggle)
+#+end_src
+
+evil
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(define-key evil-normal-state-map (kbd "_d") "\"_d")
+(define-key evil-normal-state-map (kbd "x") "\"_x")
+#+end_src
+
 *** hooks
 comfier line height in org mode
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
@@ -156,19 +169,12 @@ doom dashboard
 (remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-footer)
 
 (add-hook! '+doom-dashboard-functions :append
-  (insert "" (+doom-dashboard--center +doom-dashboard--width "< w e l c o m e,  m o f e i >"))
-  (insert "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n" (+doom-dashboard--center +doom-dashboard--width "")))
+  (insert "\n\n\n\n\n\n\n\n\n\n\n\n\n\n" (+doom-dashboard--center +doom-dashboard--width "")))
 #+end_src
 
 misc.
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (remove-hook 'doom-first-input-hook #'evil-snipe-mode) ; evil s functionality
-#+end_src
-
-*** evil
-#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(define-key evil-normal-state-map (kbd "_d") "\"_d")
-(define-key evil-normal-state-map (kbd "x") "\"_x")
 #+end_src
 
 *** org
@@ -233,7 +239,6 @@ org-capture
    (green      '("#73daca" "#73daca" "green"        ))
    (teal       '("#2ac3de" "#2ac3de" "brightgreen"  ))
    (yellow     '("#e0af68" "#e0af68" "yellow"       ))
-   (baby-blue  '("#342838" "#342838" "brightblue"   ))
    (blue       '("#7aa2f7" "#7aa2f7" "brightblue"   ))
    (dark-blue  '("#565f89" "#565f89" "blue"         ))
    (magenta    '("#bb9af7" "#bb9af7" "magenta"      ))
@@ -256,7 +261,7 @@ org-capture
    (strings        yellow)
    (variables      magenta)
    (numbers        magenta)
-   (region         baby-blue)
+   (region         (doom-darken magenta 0.8))
    (error          red)
    (warning        yellow)
    (success        green)
@@ -267,7 +272,7 @@ org-capture
    (modeline-fg     nil)
    (modeline-fg-alt (doom-blend violet base4 0.2))
 
-   (modeline-bg (doom-darken bg-alt 0.25))
+   (modeline-bg (doom-darken bg-alt 0.2))
    (modeline-bg-l base2)
    (modeline-bg-inactive (doom-darken bg 0.1))
    (modeline-bg-inactive-l `(,(doom-darken (car bg-alt) 0.05) ,@(cdr base1))))
@@ -281,7 +286,7 @@ org-capture
     :weight 'regular)
 
    ((line-number &override) :foreground base4)
-   ((line-number-current-line &override) :foreground cyan)
+   ((line-number-current-line &override) :weight 'bold :foreground cyan)
 
    (doom-modeline-bar :background highlight)
    (doom-modeline-project-dir :foreground violet :weight 'bold)
@@ -295,7 +300,7 @@ org-capture
    (magit-diff-removed :foreground (doom-darken red 0.2) :background (doom-blend red bg 0.1))
    (magit-diff-removed-highlight :foreground red :background (doom-blend red bg 0.2) :bold bold)
 
-   (evil-ex-lazy-highlight :background baby-blue)
+   (evil-ex-lazy-highlight :background base2)
 
    (css-proprietary-property :foreground orange)
    (css-property             :foreground green)
