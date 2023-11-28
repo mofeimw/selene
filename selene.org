@@ -1,6 +1,5 @@
-#+title: Selene Emacs configuration
+#+title: selene: greek goddess of the moon
 #+author: mofei
-* Selene: Greek goddess of the Moon
 ** shell script
 #+begin_src shell :tangle ~/selene.sh :tangle-mode (identity #o755)
 #!/bin/sh
