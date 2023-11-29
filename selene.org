@@ -63,6 +63,7 @@ emacs --daemon
 ;; -*- no-byte-compile: t; -*-
 (package! rainbow-mode)
 (package! mixed-pitch)
+(package! devdocs)
 #+end_src
 
 ** config.el
@@ -134,7 +135,9 @@ https://dougie.io/emacs/indentation/
 misc.
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (map! :leader
-      "v" #'+vterm/toggle)
+      "j" #'(lambda () (interactive) (find-file "~/selene.org"))
+      "v" #'+vterm/toggle
+      "d" #'devdocs-lookup)
 #+end_src
 
 evil
@@ -144,13 +147,14 @@ evil
 #+end_src
 
 *** hooks
-comfier line height in org mode
+comfier line height
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (add-hook 'buffer-list-update-hook
   (lambda ()
-    (when (eq major-mode 'org-mode)
+    (setq modes '(org-mode devdocs-mode))
+    (when (member major-mode modes)
       (setq-local line-spacing 6))
-    (when (not (eq major-mode 'org-mode))
+    (when (not (member major-mode modes))
       (setq-local line-spacing 0))))
 #+end_src
 
@@ -286,7 +290,7 @@ org-capture
     :weight 'regular)
 
    ((line-number &override) :foreground base4)
-   ((line-number-current-line &override) :weight 'bold :foreground cyan)
+   ((line-number-current-line &override) :foreground cyan)
 
    (doom-modeline-bar :background highlight)
    (doom-modeline-project-dir :foreground violet :weight 'bold)
