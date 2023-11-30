@@ -137,7 +137,10 @@ misc.
 (map! :leader
       "j" #'(lambda () (interactive) (find-file "~/selene.org"))
       "v" #'+vterm/toggle
-      "d" #'devdocs-lookup)
+      "d" #'devdocs-lookup
+      "! l" #'flycheck-list-errors
+      "! n" #'flycheck-next-error
+      "! p" #'flycheck-previous-error)
 #+end_src
 
 evil
