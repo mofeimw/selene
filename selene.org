@@ -78,6 +78,12 @@ emacs --daemon
 
 (setq display-line-numbers-type 'relative)
 
+(setq comfy-modes '(org-mode devdocs-mode))
+
+(setq-default indent-tabs-mode nil)
+(setq-default tab-width 4)
+(setq indent-line-function 'insert-tab)
+
 (push '(fullscreen . maximized) default-frame-alist)
 #+end_src
 
@@ -109,28 +115,6 @@ https://korewanetadesu.com/emacs-on-os-x.html
     (ns-raise-emacs)))
 #+end_src
 
-tabs
-https://dougie.io/emacs/indentation/
-#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq custom-tab-width 2)
-
-(defun disable-tabs () (setq indent-tabs-mode nil))
-(defun enable-tabs  ()
-  (local-set-key (kbd "TAB") 'tab-to-tab-stop)
-  (setq indent-tabs-mode t)
-  (setq tab-width custom-tab-width))
-
-(add-hook 'prog-mode-hook 'enable-tabs)
-(add-hook 'lisp-mode-hook 'disable-tabs)
-(add-hook 'emacs-lisp-mode-hook 'disable-tabs)
-
-(setq-default python-indent-offset custom-tab-width)
-(setq-default js-indent-level custom-tab-width)
-
-(setq-default electric-indent-inhibit t)
-(setq-default evil-shift-width custom-tab-width)
-#+end_src
-
 *** keymaps
 misc.
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
@@ -145,20 +129,33 @@ misc.
 
 evil
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(define-key evil-motion-state-map (kbd "C-`") 'evil-emacs-state)
+(define-key evil-emacs-state-map (kbd "C-`") 'evil-exit-emacs-state)
+
 (define-key evil-normal-state-map (kbd "_d") "\"_d")
 (define-key evil-normal-state-map (kbd "x") "\"_x")
 #+end_src
 
-*** hooks
-comfier line height
+*** functions
+comfy line height for comfy serif font
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(add-hook 'buffer-list-update-hook
-  (lambda ()
-    (setq modes '(org-mode devdocs-mode))
-    (when (member major-mode modes)
-      (setq-local line-spacing 6))
-    (when (not (member major-mode modes))
-      (setq-local line-spacing 0))))
+(defun comfy-line-height ()
+  (when (member major-mode comfy-modes)
+    (setq-local line-spacing 6))
+  (when (not (member major-mode comfy-modes))
+    (setq-local line-spacing 6)))
+#+end_src
+
+*** hooks
+comfy line height hook
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(add-hook 'buffer-list-update-hook 'comfy-line-height)
+#+end_src
+
+2 space tab in lisp modes
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(add-hook 'lisp-mode-hook (lambda () (setq-local tab-width 2)))
+(add-hook 'emacs-lisp-mode-hook (lambda () (setq-local tab-width 2)))
 #+end_src
 
 fix issue of small variable-pitch text after new client frame
