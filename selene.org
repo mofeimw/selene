@@ -10,6 +10,9 @@ if [ "$1" = "launcher" ]; then
     fi
     emacsclient -e  "(select-frame-set-input-focus (selected-frame))"
     exit
+elif [ "$1" = "diff" ]; then
+    diff ~/selene.org ~/selene/selene.org
+    exit
 elif [ "$1" = "tangle" ]; then
     emacsclient -e '(org-babel-tangle-file "~/selene.org")'
     exit
@@ -69,20 +72,19 @@ emacs --daemon
 ** config.el
 *** general settings
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(setq doom-theme 'nyx)
-(setq doom-font (font-spec :family "Fira Code" :size 13 :height 1.0)
-      doom-variable-pitch-font (font-spec :family "Palatino" :height 1.4))
+(setq doom-theme 'nyx
+      doom-font (font-spec :family "Fira Code" :size 13 :height 1.0)
+      doom-variable-pitch-font (font-spec :family "Palatino" :height 1.4)
 
-(setq fancy-splash-image "~/selene.png")
-(setq confirm-kill-emacs nil)
+      fancy-splash-image "~/selene.png"
+      confirm-kill-emacs nil
+      display-line-numbers-type 'relative
 
-(setq display-line-numbers-type 'relative)
+      comfy-modes '(org-mode devdocs-mode))
 
-(setq comfy-modes '(org-mode devdocs-mode))
-
-(setq-default indent-tabs-mode nil)
-(setq-default tab-width 4)
-(setq indent-line-function 'insert-tab)
+(setq-default indent-tabs-mode nil
+              tab-width 4
+              indent-line-function 'insert-tab)
 
 (push '(fullscreen . maximized) default-frame-alist)
 #+end_src
@@ -161,9 +163,9 @@ comfy line height hook
 fix issue of small variable-pitch text after new client frame
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (add-hook 'server-after-make-frame-hook
-    (lambda ()
-      (setq-local mixed-pitch-set-height t)
-      (set-face-attribute 'variable-pitch nil :height 1.4)))
+  (lambda ()
+    (setq-local mixed-pitch-set-height t)
+    (set-face-attribute 'variable-pitch nil :height 1.4)))
 #+end_src
 
 doom dashboard
