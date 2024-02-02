@@ -132,9 +132,11 @@ misc.
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (map! :leader
       "j" #'(lambda () (interactive) (find-file "~/selene.org"))
-      "r" #'(lambda () (interactive) (run-clang (buffer-file-name)))
       "v" #'+vterm/toggle
       "d" #'devdocs-lookup
+
+      "r c" #'(lambda () (interactive) (selene/run-clang (buffer-file-name)))
+      "r p" #'(lambda () (interactive) (selene/run-python (buffer-file-name)))
 
       "! l" #'flycheck-list-errors
       "! n" #'flycheck-next-error
@@ -150,26 +152,32 @@ evil
 *** functions
 comfy line height for comfy serif font
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(defun comfy-line-height ()
+(defun selene/comfy-line-height ()
   (when (member major-mode comfy-modes)
     (setq-local line-spacing 6))
   (when (not (member major-mode comfy-modes))
     (setq-local line-spacing 6)))
 #+end_src
 
-run clang [c++ 11] command in vterm
+run programs in vterm
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(defun run-clang (file-name)
+(defun selene/run-clang (file-name)
   (interactive)
   (vterm)
   (set-buffer "*vterm*")
   (term-send-raw-string (concat "clang++ -std=c++11 \"" file-name "\" && ./a.out\n")))
+
+(defun selene/run-python (file-name)
+  (interactive)
+  (vterm)
+  (set-buffer "*vterm*")
+  (term-send-raw-string (concat "python3 \"" file-name "\"\n")))
 #+end_src
 
 *** hooks
 comfy line height hook
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(add-hook 'buffer-list-update-hook 'comfy-line-height)
+(add-hook 'buffer-list-update-hook 'selene/comfy-line-height)
 #+end_src
 
 2 space tab in lisp modes
