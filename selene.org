@@ -84,7 +84,11 @@ emacs --daemon
 
 (setq-default indent-tabs-mode nil
               tab-width 4
-              indent-line-function 'insert-tab)
+              tab-stop-list ()
+              indent-line-function 'insert-tab
+
+              python-indent-guess-indent-offset nil
+              python-indent-offset 4)
 
 (push '(fullscreen . maximized) default-frame-alist)
 #+end_src
@@ -117,13 +121,21 @@ https://korewanetadesu.com/emacs-on-os-x.html
     (ns-raise-emacs)))
 #+end_src
 
+popup rules
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(set-popup-rules!
+  '(("^\\*doom:vterm" :side bottom :size 0.32)))
+#+end_src
+
 *** keymaps
 misc.
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (map! :leader
       "j" #'(lambda () (interactive) (find-file "~/selene.org"))
+      "r" #'(lambda () (interactive) (run-clang (buffer-file-name)))
       "v" #'+vterm/toggle
       "d" #'devdocs-lookup
+
       "! l" #'flycheck-list-errors
       "! n" #'flycheck-next-error
       "! p" #'flycheck-previous-error)
@@ -133,9 +145,6 @@ evil
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (define-key evil-motion-state-map (kbd "C-`") 'evil-emacs-state)
 (define-key evil-emacs-state-map (kbd "C-`") 'evil-exit-emacs-state)
-
-(define-key evil-normal-state-map (kbd "_d") "\"_d")
-(define-key evil-normal-state-map (kbd "x") "\"_x")
 #+end_src
 
 *** functions
@@ -146,6 +155,15 @@ comfy line height for comfy serif font
     (setq-local line-spacing 6))
   (when (not (member major-mode comfy-modes))
     (setq-local line-spacing 6)))
+#+end_src
+
+run clang [c++ 11] command in vterm
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(defun run-clang (file-name)
+  (interactive)
+  (vterm)
+  (set-buffer "*vterm*")
+  (term-send-raw-string (concat "clang++ -std=c++11 \"" file-name "\" && ./a.out\n")))
 #+end_src
 
 *** hooks
