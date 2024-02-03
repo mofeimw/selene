@@ -31,6 +31,7 @@ emacs --daemon
 
 ** init.el
 #+begin_src emacs-lisp :tangle ~/.config/doom/init.el :mkdirp yes
+;; -*- lexical-binding: t; -*-
 (doom! :input
 
        :completion company ivy vertico
@@ -73,6 +74,7 @@ emacs --daemon
 ** config.el
 *** general settings
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+;; -*- lexical-binding: t; -*-
 (setq doom-theme 'nyx
       doom-font (font-spec :family "Fira Code" :size 13 :height 1.0)
       doom-variable-pitch-font (font-spec :family "Palatino" :height 1.4)
