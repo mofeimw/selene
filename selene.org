@@ -156,13 +156,20 @@ evil
 #+end_src
 
 *** functions
-comfy line height for comfy serif font
+change hook
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(defun selene/comfy-line-height ()
+(defun selene/on-change ()
+  ; comfy line height for comfy serif font
   (when (member major-mode comfy-modes)
     (setq-local line-spacing 6))
   (when (not (member major-mode comfy-modes))
-    (setq-local line-spacing 6)))
+    (setq-local line-spacing 6))
+
+  ; hide cursor on splash dash
+  (when (eq major-mode '+doom-dashboard-mode)
+      (internal-show-cursor (selected-window) nil))
+  (when (not (eq major-mode '+doom-dashboard-mode))
+      (internal-show-cursor (selected-window) t)))
 #+end_src
 
 run programs in vterm
@@ -181,9 +188,9 @@ run programs in vterm
 #+end_src
 
 *** hooks
-comfy line height hook
+on buffer list change
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(add-hook 'buffer-list-update-hook 'selene/comfy-line-height)
+(add-hook 'buffer-list-update-hook 'selene/on-change)
 #+end_src
 
 2 space tab in lisp modes
@@ -207,7 +214,7 @@ doom dashboard
 (remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-footer)
 
 (add-hook! '+doom-dashboard-functions :append
-  (insert "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n" (+doom-dashboard--center +doom-dashboard--width "")))
+  (insert (+doom-dashboard--center +doom-dashboard--width "< w e l c o m e ,   m o f e i >") "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"))
 #+end_src
 
 misc.
