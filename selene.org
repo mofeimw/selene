@@ -67,6 +67,7 @@ emacs --daemon
 (package! rainbow-mode)
 (package! mixed-pitch)
 (package! devdocs)
+(package! olivetti)
 #+end_src
 
 ** config.el
@@ -131,7 +132,10 @@ popup rules
 misc.
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (map! :leader
-      "j" #'(lambda () (interactive) (find-file "~/selene.org"))
+      ; selene keyspace
+      "s s" #'(lambda () (interactive) (find-file "~/selene.org"))
+      "s o" #'olivetti-mode
+
       "v" #'+vterm/toggle
       "d" #'devdocs-lookup
 
@@ -201,7 +205,7 @@ doom dashboard
 (remove-hook '+doom-dashboard-functions #'doom-dashboard-widget-footer)
 
 (add-hook! '+doom-dashboard-functions :append
-  (insert "\n\n\n\n\n\n\n\n\n\n\n\n\n\n" (+doom-dashboard--center +doom-dashboard--width "")))
+  (insert "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n" (+doom-dashboard--center +doom-dashboard--width "")))
 #+end_src
 
 misc.
