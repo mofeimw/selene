@@ -29,6 +29,26 @@ fi
 emacs --daemon
 #+end_src
 
+** helios
+#+begin_src emacs-lisp :tangle ~/helios.el
+(defun helios-buffer ()
+  "Return the helios buffer."
+  (get-buffer-create "*helios*"))
+
+(defun helios ()
+  "Display helios in a buffer."
+  (interactive)
+  (with-current-buffer (helios-buffer)
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert "welcome to helios")
+      (goto-char (point-min))))
+  (switch-to-buffer (helios-buffer))
+  (read-only-mode 1))
+
+(provide 'helios)
+#+end_src
+
 ** init.el
 #+begin_src emacs-lisp :tangle ~/.config/doom/init.el :mkdirp yes
 ;; -*- lexical-binding: t; -*-
@@ -94,6 +114,10 @@ emacs --daemon
               python-indent-offset 4)
 
 (push '(fullscreen . maximized) default-frame-alist)
+
+;; helios
+(load-file "~/helios.el")
+(require 'helios)
 #+end_src
 
 mac specific settings
@@ -146,7 +170,9 @@ misc.
 
       "! l" #'flycheck-list-errors
       "! n" #'flycheck-next-error
-      "! p" #'flycheck-previous-error)
+      "! p" #'flycheck-previous-error
+
+      "@" #'helios)
 #+end_src
 
 evil
