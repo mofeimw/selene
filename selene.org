@@ -31,7 +31,24 @@ emacs --daemon
 
 ** helios
 #+begin_src emacs-lisp :tangle ~/helios.el
-(defun helios/parser ()
+(defvar *threads* '())
+
+(defun helios/parser (line)
+  (cond
+   ((string-match "^#\\([a-zA-Z0-9_-]+\\)" line)
+    (let* ((tag (match-string 1 line))
+           (tag-thread (assoc tag *threads*)))
+      (if tag-thread
+        (setcdr tag-thread (cons line (cdr tag-thread)))
+        (push (list tag line) *threads*)))))
+  (unless (string= line "")
+          (let ((main-thread (assoc "main" *threads*)))
+            (if main-thread
+                (setcdr main-thread (cons line (cdr main-thread)))
+                (push (list "main" line) *threads*)))))
+
+(defun helios/load-file ()
+  (setq *threads* '())
   (with-temp-buffer
     (insert-file-contents "~/helios.nyx")
     (goto-char (point-min))
@@ -40,6 +57,7 @@ emacs --daemon
                    (line-beginning-position)
                    (line-end-position))))
         (with-current-buffer (helios/buffer)
+          (helios/parser line)
           (let ((inhibit-read-only t))
             (insert (helios/center-text line))))
         (forward-line 1)))))
@@ -67,7 +85,7 @@ emacs --daemon
       (goto-char (point-min))))
   (switch-to-buffer (helios/buffer))
   (read-only-mode 1)
-  (helios/parser))
+  (helios/load-file))
 
 (provide 'helios)
 #+end_src
