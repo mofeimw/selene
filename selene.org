@@ -66,8 +66,8 @@ emacs --daemon
   (get-buffer-create "*helios*"))
 
 (defun helios/center-text (text)
-  (let* ((width (window-total-width))
-         (pad (/ (- width (length text)) 2)))
+  (let* ((width (- (window-total-width) 16))
+         (pad (max 0 (/ (- width (length text)) 2))))
     (concat (make-string pad ?\s) text "\n")))
 
 (defun helios/center-vert-pad ()
@@ -85,6 +85,9 @@ emacs --daemon
       (goto-char (point-min))))
   (switch-to-buffer (helios/buffer))
   (read-only-mode 1)
+  (visual-line-mode t)
+  (set-window-margins (selected-window) 8 8)
+  (add-hook 'window-configuration-change-hook #'helios nil t)
   (helios/load-file))
 
 (provide 'helios)
