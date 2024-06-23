@@ -31,17 +31,30 @@ emacs --daemon
 
 ** helios
 #+begin_src emacs-lisp :tangle ~/helios.el
+(defun helios/parser ()
+  (with-temp-buffer
+    (insert-file-contents "~/helios.nyx")
+    (goto-char (point-min))
+    (while (not (eobp))
+      (let ((line (buffer-substring-no-properties
+                   (line-beginning-position)
+                   (line-end-position))))
+        (with-current-buffer (helios/buffer)
+          (let ((inhibit-read-only t))
+            (insert (helios/center-text line))))
+        (forward-line 1)))))
+
 (defun helios/buffer ()
   (get-buffer-create "*helios*"))
 
 (defun helios/center-text (text)
   (let* ((width (window-total-width))
          (pad (/ (- width (length text)) 2)))
-    (concat (make-string pad ?\s) text)))
+    (concat (make-string pad ?\s) text "\n")))
 
 (defun helios/center-vert-pad ()
   (let* ((height (window-total-height)))
-    (make-string (/ height 3) ?\n)))
+    (make-string (/ height 4) ?\n)))
 
 (defun helios ()
   (interactive)
@@ -50,9 +63,11 @@ emacs --daemon
       (erase-buffer)
       (insert (helios/center-vert-pad))
       (insert (helios/center-text "welcome to HELIOS"))
+      (insert (helios/center-text "-----------------"))
       (goto-char (point-min))))
   (switch-to-buffer (helios/buffer))
-  (read-only-mode 1))
+  (read-only-mode 1)
+  (helios/parser))
 
 (provide 'helios)
 #+end_src
