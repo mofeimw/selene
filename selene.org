@@ -110,16 +110,7 @@ emacs --daemon
   (set-window-margins (selected-window) left-padding 8)
   (visual-line-mode t)
   (read-only-mode 1)
-
-  (define-key evil-motion-state-local-map [down-mouse-1] #'ignore)
-  (define-key evil-motion-state-local-map [mouse-1] #'ignore)
-  (define-key evil-motion-state-local-map [drag-mouse-1] #'ignore)
-  (define-key evil-motion-state-local-map [double-mouse-1] #'ignore)
-  (define-key evil-motion-state-local-map [triple-mouse-1] #'ignore)
-  (define-key evil-motion-state-local-map [mouse-2] #'ignore)
-  (define-key evil-motion-state-local-map [mouse-3] #'ignore)
-  (define-key evil-motion-state-local-map [wheel-up] #'ignore)
-  (define-key evil-motion-state-local-map [wheel-down] #'ignore)
+  (helios/neutralize-mouse)
 
   (add-hook 'buffer-list-update-hook #'helios/mode-check-buffer))
 
@@ -130,6 +121,17 @@ emacs --daemon
   (if (string-match "^\*helios" (buffer-name))
       (helios-mode 1)
     (helios-mode -1)))
+
+(defun helios/neutralize-mouse ()
+  (define-key evil-motion-state-local-map [down-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [drag-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [double-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [triple-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [mouse-2] #'ignore)
+  (define-key evil-motion-state-local-map [mouse-3] #'ignore)
+  (define-key evil-motion-state-local-map [wheel-up] #'ignore)
+  (define-key evil-motion-state-local-map [wheel-down] #'ignore))
 
 (defun helios/generate-threadbinds ()
   (dolist (thread helios/threads)
@@ -150,12 +152,13 @@ emacs --daemon
         (insert "\n")
         (dolist (line contents)
           (insert line)
-          (insert "\n"))
+          (insert "\n\n"))
 
         (switch-to-buffer (current-buffer))
         (read-only-mode t)
         (visual-line-mode t)
         (mixed-pitch-mode 1)
+        (helios/neutralize-mouse)
         (set-window-margins (selected-window) 4 4)
         (evil-local-set-key 'normal (kbd "q") 'helios)))))
 
