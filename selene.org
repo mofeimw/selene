@@ -82,6 +82,8 @@ emacs --daemon
 (defun helios/load-dashboard ()
   (setq top-padding (/ (window-total-height) 6))
   (setq left-padding (* (/ (window-total-width) 5) 2))
+  (when (< (window-total-width) 100)
+    (setq left-padding (/ (window-total-width) 3)))
 
   (with-current-buffer (helios/buffer)
     (let ((inhibit-read-only t))
@@ -158,7 +160,6 @@ emacs --daemon
         (read-only-mode t)
         (visual-line-mode t)
         (mixed-pitch-mode 1)
-        (helios/neutralize-mouse)
         (set-window-margins (selected-window) 4 4)
         (evil-local-set-key 'normal (kbd "q") 'helios)))))
 
@@ -307,19 +308,21 @@ evil
 change hook
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (defun selene/on-buffer-list-change ()
-  ; comfy line height for comfy serif font
-  (when (member major-mode comfy-modes)
-    (mixed-pitch-mode 1)
-    (setq-local line-spacing 6))
-  (when (not (member major-mode comfy-modes))
-    (mixed-pitch-mode -1)
-    (setq-local line-spacing 6))
+  ; ignore helios buffers
+  (unless (string-match "^\*helios" (buffer-name))
+    ; comfy line height for comfy serif font
+    (when (member major-mode comfy-modes)
+      (mixed-pitch-mode 1)
+      (setq-local line-spacing 6))
+    (when (not (member major-mode comfy-modes))
+      (mixed-pitch-mode -1)
+      (setq-local line-spacing 6)))
 
   ; hide cursor on splash dash
   (when (eq major-mode '+doom-dashboard-mode)
-      (internal-show-cursor (selected-window) nil))
+    (internal-show-cursor (selected-window) nil))
   (when (not (eq major-mode '+doom-dashboard-mode))
-      (internal-show-cursor (selected-window) t)))
+    (internal-show-cursor (selected-window) t)))
 #+end_src
 
 run programs in vterm
