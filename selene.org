@@ -33,20 +33,6 @@ emacs --daemon
 #+begin_src emacs-lisp :tangle ~/helios.el
 (defvar *threads* '())
 
-(defun helios/parser (line)
-  (cond
-   ((string-match "^#\\([a-zA-Z0-9_-]+\\)" line)
-    (let* ((tag (match-string 1 line))
-           (tag-thread (assoc tag *threads*)))
-      (if tag-thread
-        (setcdr tag-thread (cons line (cdr tag-thread)))
-        (push (list tag line) *threads*)))))
-  (unless (string= line "")
-          (let ((main-thread (assoc "main" *threads*)))
-            (if main-thread
-                (setcdr main-thread (cons line (cdr main-thread)))
-                (push (list "main" line) *threads*)))))
-
 (defun helios/load-file ()
   (setq *threads* '())
   (with-temp-buffer
@@ -56,39 +42,69 @@ emacs --daemon
       (let ((line (buffer-substring-no-properties
                    (line-beginning-position)
                    (line-end-position))))
-        (with-current-buffer (helios/buffer)
-          (helios/parser line)
-          (let ((inhibit-read-only t))
-            (insert (helios/center-text line))))
+        (helios/parser line)
         (forward-line 1)))))
+
+(defun helios/parser (line)
+  (cond
+   ((string-match "^#\\([a-zA-Z0-9_-]+\\)" line)
+    (let* ((tag (match-string 1 line))
+           (tag-thread (assoc tag *threads*)))
+      (if tag-thread
+          (setcdr tag-thread (cons line (cdr tag-thread)))
+        (push (list tag line) *threads*)))))
+  (unless (string= line "")
+    (let ((main-thread (assoc "main" *threads*)))
+      (if main-thread
+          (setcdr main-thread (cons line (cdr main-thread)))
+        (push (list "main" line) *threads*)))))
+
+(defun helios/load-dashboard ()
+  (with-current-buffer (helios/buffer)
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert (helios/center-vert-pad))
+      (insert (helios/center-text "welcome to HELIOS"))
+      (insert (helios/center-text "=================\n"))
+      (insert (helios/center-text "threads"))
+      (insert (helios/center-text "-------"))
+      (dolist (thread *threads*)
+        (insert (helios/center-text (concat "[" (downcase (substring (car thread) 0 1)) "] " (car thread)))))
+      (goto-char (point-min))))
+  (switch-to-buffer (helios/buffer))
+  (set-window-margins (selected-window) 8 8)
+  (visual-line-mode t)
+  (read-only-mode 1))
 
 (defun helios/buffer ()
   (get-buffer-create "*helios*"))
+
+(defun helios/center-vert-pad ()
+  (let* ((height (window-total-height)))
+    (make-string (/ height 4) ?\n)))
 
 (defun helios/center-text (text)
   (let* ((width (- (window-total-width) 16))
          (pad (max 0 (/ (- width (length text)) 2))))
     (concat (make-string pad ?\s) text "\n")))
 
-(defun helios/center-vert-pad ()
-  (let* ((height (window-total-height)))
-    (make-string (/ height 4) ?\n)))
+(defun helios/generate-threadbinds ()
+  (dolist (thread *threads*)
+    (let* ((name (car thread))
+           (key (downcase (substring name 0 1))))
+      (evil-local-set-key 'normal (kbd key)
+                          `(lambda ()
+                             (interactive)
+                             (helios/display-thread ',thread))))))
+
+(defun helios/display-thread (thread)
+  (print thread))
 
 (defun helios ()
   (interactive)
-  (with-current-buffer (helios/buffer)
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (insert (helios/center-vert-pad))
-      (insert (helios/center-text "welcome to HELIOS"))
-      (insert (helios/center-text "-----------------"))
-      (goto-char (point-min))))
-  (switch-to-buffer (helios/buffer))
-  (read-only-mode 1)
-  (visual-line-mode t)
-  (set-window-margins (selected-window) 8 8)
-  (add-hook 'window-configuration-change-hook #'helios nil t)
-  (helios/load-file))
+  (helios/load-file)
+  (helios/load-dashboard)
+  (helios/generate-threadbinds))
 
 (provide 'helios)
 #+end_src
