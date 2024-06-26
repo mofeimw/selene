@@ -38,8 +38,19 @@ emacs --daemon
   :lighter "helios"
   :global nil
   (if helios-mode
-      (setq-local evil-normal-state-cursor "#18131B")
-    (setq-local evil-normal-state-cursor '("#b4f9f8" box))))
+      (progn
+        (mixed-pitch-mode 1)
+        (setq-local evil-normal-state-cursor "#18131B"))
+    (progn
+      (mixed-pitch-mode -1)
+      (setq-local evil-normal-state-cursor '("#b4f9f8" box)))))
+
+(defface helios/font/h1
+  '((t (:foreground "#e0af68" :height 600 :family "Egmond")))
+  "helios header 1 font")
+(defface helios/font/h2
+  '((t (:foreground "#b4f9f8" :weight bold :height 200)))
+  "helios header 2 font")
 
 (defun helios/load-file ()
   (setq helios/threads '())
@@ -61,6 +72,7 @@ emacs --daemon
       (if tag-thread
           (setcdr tag-thread (cons line (cdr tag-thread)))
         (push (list tag line) helios/threads)))))
+
   (unless (string= line "")
     (let ((main-thread (assoc "main" helios/threads)))
       (if main-thread
@@ -68,22 +80,47 @@ emacs --daemon
         (push (list "main" line) helios/threads)))))
 
 (defun helios/load-dashboard ()
+  (setq top-padding (/ (window-total-height) 6))
+  (setq left-padding (* (/ (window-total-width) 5) 2))
+
   (with-current-buffer (helios/buffer)
     (let ((inhibit-read-only t))
       (erase-buffer)
-      (insert (helios/center-vert-pad))
-      (insert (helios/center-text "welcome to HELIOS"))
-      (insert (helios/center-text "=================\n"))
-      (insert (helios/center-text "threads"))
-      (insert (helios/center-text "-------"))
+      (dotimes (y top-padding)
+        (insert "\n"))
+      (insert "H E L I O S\n")
+      (insert "threads\n")
       (dolist (thread helios/threads)
-        (insert (helios/center-text (concat "[" (downcase (substring (car thread) 0 1)) "] " (car thread)))))
-      (goto-char (point-min))))
+        (insert (concat "[" (downcase (substring (car thread) 0 1)) "]"
+                        (substring (car thread) 1 (length (car thread))) "\n")))))
+
   (switch-to-buffer (helios/buffer))
   (helios/mode-check-buffer)
-  (set-window-margins (selected-window) 8 8)
+
+  (setq font-lock-defaults nil)
+  (setq helios-dashboard-font-lock
+        '(("H E L I O S"
+           (0 'helios/font/h1 t))
+          ("threads"
+           (0 'helios/font/h2 t))))
+  (setq font-lock-defaults '(helios-dashboard-font-lock))
+  (setq-local line-spacing 15)
+  (font-lock-mode 1)
+
+  (set-window-margins (selected-window) left-padding 8)
   (visual-line-mode t)
   (read-only-mode 1)
+
+  (define-key evil-motion-state-local-map [down-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [drag-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [double-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [triple-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [mouse-2] #'ignore)
+  (define-key evil-motion-state-local-map [mouse-3] #'ignore)
+  (define-key evil-motion-state-local-map [wheel-up] #'ignore)
+  (define-key evil-motion-state-local-map [wheel-down] #'ignore)
+
   (add-hook 'buffer-list-update-hook #'helios/mode-check-buffer))
 
 (defun helios/buffer ()
@@ -93,15 +130,6 @@ emacs --daemon
   (if (string-match "^\*helios" (buffer-name))
       (helios-mode 1)
     (helios-mode -1)))
-
-(defun helios/center-vert-pad ()
-  (let* ((height (window-total-height)))
-    (make-string (/ height 4) ?\n)))
-
-(defun helios/center-text (text)
-  (let* ((width (- (window-total-width) 16))
-         (pad (max 0 (/ (- width (length text)) 2))))
-    (concat (make-string pad ?\s) text "\n")))
 
 (defun helios/generate-threadbinds ()
   (dolist (thread helios/threads)
@@ -123,9 +151,11 @@ emacs --daemon
         (dolist (line contents)
           (insert line)
           (insert "\n"))
+
+        (switch-to-buffer (current-buffer))
         (read-only-mode t)
         (visual-line-mode t)
-        (switch-to-buffer (current-buffer))
+        (mixed-pitch-mode 1)
         (set-window-margins (selected-window) 4 4)
         (evil-local-set-key 'normal (kbd "q") 'helios)))))
 
@@ -273,11 +303,13 @@ evil
 *** functions
 change hook
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(defun selene/on-change ()
+(defun selene/on-buffer-list-change ()
   ; comfy line height for comfy serif font
   (when (member major-mode comfy-modes)
+    (mixed-pitch-mode 1)
     (setq-local line-spacing 6))
   (when (not (member major-mode comfy-modes))
+    (mixed-pitch-mode -1)
     (setq-local line-spacing 6))
 
   ; hide cursor on splash dash
@@ -305,7 +337,7 @@ run programs in vterm
 *** hooks
 on buffer list change
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(add-hook 'buffer-list-update-hook 'selene/on-change)
+(add-hook 'buffer-list-update-hook 'selene/on-buffer-list-change)
 #+end_src
 
 2 space tab in lisp modes
