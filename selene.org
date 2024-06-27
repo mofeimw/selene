@@ -51,6 +51,9 @@ emacs --daemon
 (defface helios/font/h2
   '((t (:foreground "#b4f9f8" :weight bold :height 200)))
   "helios header 2 font")
+(defface helios/font/quote
+  '((t (:foreground "#bb9af7" :slant italic :height 222 :family "Yrsa")))
+  "helios quote font")
 
 (defun helios/load-file ()
   (setq helios/threads '())
@@ -80,10 +83,19 @@ emacs --daemon
         (push (list "main" line) helios/threads)))))
 
 (defun helios/load-dashboard ()
-  (setq top-padding (/ (window-total-height) 6))
+  (setq top-padding (/ (window-total-height) 8))
   (setq left-padding (* (/ (window-total-width) 5) 2))
   (when (< (window-total-width) 100)
     (setq left-padding (/ (window-total-width) 3)))
+
+  (setq quotes '(
+                 "prime time grind time"
+                 "cook or get cooked"
+                 "pressure makes diamonds"
+                 "I N V E R T"
+                 "lock the fuck in"
+                 "garbage in, garbage out"))
+  (setq quote (nth (random (length quotes)) quotes))
 
   (with-current-buffer (helios/buffer)
     (let ((inhibit-read-only t))
@@ -91,6 +103,7 @@ emacs --daemon
       (dotimes (y top-padding)
         (insert "\n"))
       (insert "H E L I O S\n")
+      (insert (format "\"%s\"\n" quote))
       (insert "threads\n")
       (dolist (thread helios/threads)
         (insert (concat "[" (downcase (substring (car thread) 0 1)) "]"
@@ -103,10 +116,12 @@ emacs --daemon
   (setq helios-dashboard-font-lock
         '(("H E L I O S"
            (0 'helios/font/h1 t))
+          ("^\".+\""
+           (0 'helios/font/quote t))
           ("threads"
            (0 'helios/font/h2 t))))
   (setq font-lock-defaults '(helios-dashboard-font-lock))
-  (setq-local line-spacing 15)
+  (setq-local line-spacing 18)
   (font-lock-mode 1)
 
   (set-window-margins (selected-window) left-padding 8)
@@ -160,6 +175,7 @@ emacs --daemon
         (read-only-mode t)
         (visual-line-mode t)
         (mixed-pitch-mode 1)
+        (setq-local line-spacing 8)
         (set-window-margins (selected-window) 4 4)
         (evil-local-set-key 'normal (kbd "q") 'helios)))))
 
