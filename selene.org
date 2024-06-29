@@ -62,6 +62,9 @@ emacs --daemon
 (defface helios/font/code
   '((t (:foreground "#f7768e" :height 150 :family "Fira Code")))
   "helios monospace/code font")
+(defface helios/font/exclamation
+  '((t (:foreground "#e0af68" :weight bold)))
+  "helios ! font")
 
 (defun helios/load-file ()
   (setq helios/threads '())
@@ -166,14 +169,6 @@ emacs --daemon
               (insert (format "<%s: %d days remaining>\n" (car helios/countdown) (cdr helios/countdown)))))
         (setq helios/z (+ helios/z 1)))
 
-      (if (> (length helios/threads) 0)
-          (insert "threads\n"))
-      (setq helios/z (+ helios/z 1))
-      (dolist (thread helios/threads)
-        (insert (concat "[" (downcase (substring (car thread) 0 1)) "]"
-                        (substring (car thread) 1 (length (car thread))) "\n"))
-        (setq helios/z (+ helios/z 1)))
-
       (if (> (length helios/todo) 0)
           (insert "todo\n"))
       (setq helios/z (+ helios/z 1))
@@ -181,6 +176,14 @@ emacs --daemon
         (if (string-empty-p (cdr todo))
             (insert (format "- %s\n" (car todo)))
           (insert (format "- %s [%s]\n" (car todo) (cdr todo))))
+        (setq helios/z (+ helios/z 1)))
+
+      (if (> (length helios/threads) 0)
+          (insert "threads\n"))
+      (setq helios/z (+ helios/z 1))
+      (dolist (thread helios/threads)
+        (insert (concat "[" (downcase (substring (car thread) 0 1)) "]"
+                        (substring (car thread) 1 (length (car thread))) "\n"))
         (setq helios/z (+ helios/z 1)))))
 
   (switch-to-buffer (helios/buffer))
@@ -195,7 +198,9 @@ emacs --daemon
           ("^<.+>"
            (0 'helios/font/code t))
           ("\\<\\(threads\\|todo\\)\\>"
-           (0 'helios/font/h2 t))))
+           (0 'helios/font/h2 t))
+          (".*!.*"
+           (0 'helios/font/exclamation t))))
   (setq font-lock-defaults '(helios-dashboard-font-lock))
   (setq-local line-spacing 18)
   (font-lock-mode 1)
@@ -441,6 +446,14 @@ change hook
     (when (not (member major-mode comfy-modes))
       (mixed-pitch-mode -1)
       (setq-local line-spacing 6)))
+
+  ; check if .nyx file
+  (when (buffer-file-name)
+    (when (string= (file-name-extension (buffer-file-name)) "nyx")
+      (mixed-pitch-mode 1)
+      (setq-local line-spacing 6)
+      (visual-line-mode t)
+      (set-window-margins (selected-window) 4 4)))
 
   ; hide cursor on splash dash
   (when (eq major-mode '+doom-dashboard-mode)
