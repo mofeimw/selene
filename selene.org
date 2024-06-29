@@ -134,12 +134,23 @@ emacs --daemon
     date))
 
 (defun helios/command/todo (args)
-  (if (string-match "\\(.*?\\)\\s-*\\(?:\\[\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\3[0-9]+\\)?\\)\\]\\)?\\s-*$" args)
-      (let* ((task (match-string 1 args))
-             (date-string (or (match-string 2 args) ""))
-             (separator (match-string 3 args)))
-        (push (cons task date-string) helios/todo))
-    (message "[helios|todo] invalid syntax: %s" args)))
+  (cond
+   ((string-match "\\(.*?\\)\\s-*\\[x\\]\\s-*$" args)
+    (let ((task (match-string 1 args))
+          (found nil))
+      (dolist (item helios/todo)
+        (when (string= task (car item))
+          (setq found t)
+          (setcdr item "x")))
+      (unless found
+        (message "[helios|todo] task not found: %s" task))))
+   ((string-match "\\(.*?\\)\\s-*\\(?:\\[\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\3[0-9]+\\)?\\)\\]\\)?\\s-*$" args)
+    (let* ((task (match-string 1 args))
+           (date-string (or (match-string 2 args) ""))
+           (separator (match-string 3 args)))
+      (push (cons task date-string) helios/todo)))
+   (t
+    (message "[helios|todo] invalid syntax: %s" args))))
 
 (defun helios/load-dashboard ()
   (setq left-padding (* (/ (window-total-width) 5) 2))
@@ -173,10 +184,11 @@ emacs --daemon
           (insert "todo\n"))
       (setq helios/z (+ helios/z 1))
       (dolist (todo helios/todo)
-        (if (string-empty-p (cdr todo))
-            (insert (format "- %s\n" (car todo)))
-          (insert (format "- %s [%s]\n" (car todo) (cdr todo))))
-        (setq helios/z (+ helios/z 1)))
+        (unless (string= "x" (cdr todo))
+          (if (string-empty-p (cdr todo))
+              (insert (format "- %s\n" (car todo)))
+            (insert (format "- %s [%s]\n" (car todo) (cdr todo))))
+          (setq helios/z (+ helios/z 1))))
 
       (if (> (length helios/threads) 0)
           (insert "threads\n"))
@@ -604,7 +616,7 @@ org-capture
    (vc-added       green)
    (vc-deleted     red)
 
-   (modeline-fg     nil)
+   (modeline-fg     fg)
    (modeline-fg-alt (doom-blend violet base4 0.2))
 
    (modeline-bg (doom-darken bg-alt 0.2))
