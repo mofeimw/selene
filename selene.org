@@ -106,16 +106,20 @@ emacs --daemon
         (push (list "main" line) helios/threads)))))
 
 (defun helios/command/countdown (args)
-  (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\)\\s-*\\(?:\\[\\(.*?\\)\\]\\)?\\s-*$" args)
-      (let* ((date-string (match-string 1 args))
-             (separator (match-string 2 args))
-             (description (or (match-string 3 args) ""))
-             (today (calendar-current-date))
-             (date (helios/parse-date date-string separator))
-             (days-between (- (calendar-absolute-from-gregorian date)
-                              (calendar-absolute-from-gregorian today))))
-        (setq helios/countdown (cons description days-between)))
-    (message "[helios|countdown] invalid syntax: %s" args)))
+  (cond
+   ((or (string= args "") (string= args "off"))
+    (setq helios/countdown '()))
+   ((string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\)\\s-*\\(?:\\[\\(.*?\\)\\]\\)?\\s-*$" args)
+    (let* ((date-string (match-string 1 args))
+           (separator (match-string 2 args))
+           (description (or (match-string 3 args) ""))
+           (today (calendar-current-date))
+           (date (helios/parse-date date-string separator))
+           (days-between (- (calendar-absolute-from-gregorian date)
+                            (calendar-absolute-from-gregorian today))))
+      (setq helios/countdown (cons description days-between))))
+   (t
+    (message "[helios|countdown] invalid syntax: %s" args))))
 
 (defun helios/parse-date (date-string separator)
   (let* ((parts (mapcar #'string-to-number (split-string date-string (regexp-quote separator))))
@@ -448,7 +452,7 @@ disable control-scroll zooming in accidentally
 *** functions
 change hook
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(defun selene/on-buffer-list-change ()
+(defun selene/on-change ()
   ; ignore helios buffers
   (unless (string-match "^\*helios" (buffer-name))
     ; comfy line height for comfy serif font
@@ -465,7 +469,8 @@ change hook
       (mixed-pitch-mode 1)
       (setq-local line-spacing 6)
       (visual-line-mode t)
-      (set-window-margins (selected-window) 4 4)))
+      (set-window-margins (selected-window) 4 4))
+      (advice-add 'basic-save-buffer :after (lambda (_) (selene/on-change))))
 
   ; hide cursor on splash dash
   (when (eq major-mode '+doom-dashboard-mode)
@@ -492,7 +497,7 @@ run programs in vterm
 *** hooks
 on buffer list change
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(add-hook 'buffer-list-update-hook 'selene/on-buffer-list-change)
+(add-hook 'buffer-list-update-hook 'selene/on-change)
 #+end_src
 
 2 space tab in lisp modes
