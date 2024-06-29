@@ -31,7 +31,11 @@ emacs --daemon
 
 ** helios
 #+begin_src emacs-lisp :tangle ~/helios.el
+(require 'calendar)
+
 (defvar helios/threads '())
+(defvar helios/countdown '())
+(defvar helios/todo '())
 
 (define-minor-mode helios-mode
   "helios minor mode"
@@ -54,9 +58,15 @@ emacs --daemon
 (defface helios/font/quote
   '((t (:foreground "#bb9af7" :slant italic :height 222 :family "Yrsa")))
   "helios quote font")
+(defface helios/font/code
+  '((t (:foreground "#f7768e" :height 140 :family "Fira Code")))
+  "helios monospace/code font")
 
 (defun helios/load-file ()
   (setq helios/threads '())
+  (setq helios/countdown '())
+  (setq helios/todo '())
+
   (with-temp-buffer
     (insert-file-contents "~/helios.nyx")
     (goto-char (point-min))
@@ -74,13 +84,53 @@ emacs --daemon
            (tag-thread (assoc tag helios/threads)))
       (if tag-thread
           (setcdr tag-thread (cons line (cdr tag-thread)))
-        (push (list tag line) helios/threads)))))
+        (push (list tag line) helios/threads))))
+
+   ((string-match "^#{\\([a-zA-Z0-9_-]+\\)}\\s-*\\(.*\\)" line)
+    (let* ((command (match-string 1 line))
+           (command-function (intern (concat "helios/command/" command)))
+           (args (match-string 2 line)))
+      (if (fboundp command-function)
+          (funcall command-function args)
+        (message "[helios] command not found: %s" command)))))
 
   (unless (string= line "")
     (let ((main-thread (assoc "main" helios/threads)))
       (if main-thread
           (setcdr main-thread (cons line (cdr main-thread)))
         (push (list "main" line) helios/threads)))))
+
+(defun helios/command/countdown (args)
+  (if (string-match "\\(?:\\(.*?\\)\\s-*\\)?\\[\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\3[0-9]+\\)?\\)\\]\\s-*$" args)
+      (let* ((description (match-string 1 args))
+             (date-string (match-string 2 args))
+             (separator (match-string 3 args))
+             (today (calendar-current-date))
+             (date (helios/parse-date date-string separator))
+             (days-between (- (calendar-absolute-from-gregorian date)
+                              (calendar-absolute-from-gregorian today))))
+        (setq helios/countdown (cons (if (string-empty-p description) "" description) days-between)))
+    (message "[helios|countdown] invalid syntax: %s" args)))
+
+(defun helios/parse-date (date-string separator)
+  (let* ((parts (mapcar #'string-to-number (split-string date-string (regexp-quote separator))))
+         (month (nth 0 parts))
+         (day (nth 1 parts))
+         (year (or (nth 2 parts) (nth 2 (calendar-current-date))))
+         (date (list month day year))
+         (today (calendar-current-date)))
+    (when (< year 100)
+      (setq year (+ 2000 year))
+      (setq date (list month day year)))
+    (when (< (length parts) 3)
+      (if (< (calendar-absolute-from-gregorian date)
+             (calendar-absolute-from-gregorian today))
+          (setf (nth 2 date) (1+ year))))
+    date))
+
+(defun helios/command/todo (args)
+  (print "todo:")
+  (print args))
 
 (defun helios/load-dashboard ()
   (setq top-padding (/ (window-total-height) 8))
@@ -102,8 +152,17 @@ emacs --daemon
       (erase-buffer)
       (dotimes (y top-padding)
         (insert "\n"))
+
       (insert "H E L I O S\n")
+
       (insert (format "\"%s\"\n" quote))
+
+      (when helios/countdown
+        (if (>= (cdr helios/countdown) 0)
+            (if (string-empty-p (car helios/countdown))
+                (insert (format "<%d days remaining>\n" (cdr helios/countdown)))
+              (insert (format "<%s: %d days remaining>\n" (car helios/countdown) (cdr helios/countdown))))))
+
       (insert "threads\n")
       (dolist (thread helios/threads)
         (insert (concat "[" (downcase (substring (car thread) 0 1)) "]"
@@ -118,6 +177,8 @@ emacs --daemon
            (0 'helios/font/h1 t))
           ("^\".+\""
            (0 'helios/font/quote t))
+          ("^<.+>"
+           (0 'helios/font/code t))
           ("threads"
            (0 'helios/font/h2 t))))
   (setq font-lock-defaults '(helios-dashboard-font-lock))
@@ -299,6 +360,7 @@ misc.
 (map! :leader
       ; selene keyspace
       "s s" #'(lambda () (interactive) (find-file "~/selene.org"))
+      "s h" #'(lambda () (interactive) (find-file "~/helios.nyx"))
       "s o" #'olivetti-mode
 
       "v" #'+vterm/toggle
