@@ -36,6 +36,7 @@ emacs --daemon
 (defvar helios/threads '())
 (defvar helios/countdown '())
 (defvar helios/todo '())
+(defvar helios/z 0)
 
 (define-minor-mode helios-mode
   "helios minor mode"
@@ -59,13 +60,14 @@ emacs --daemon
   '((t (:foreground "#bb9af7" :slant italic :height 222 :family "Yrsa")))
   "helios quote font")
 (defface helios/font/code
-  '((t (:foreground "#f7768e" :height 140 :family "Fira Code")))
+  '((t (:foreground "#f7768e" :height 150 :family "Fira Code")))
   "helios monospace/code font")
 
 (defun helios/load-file ()
   (setq helios/threads '())
   (setq helios/countdown '())
   (setq helios/todo '())
+  (setq helios/z 0)
 
   (with-temp-buffer
     (insert-file-contents "~/helios.nyx")
@@ -129,11 +131,14 @@ emacs --daemon
     date))
 
 (defun helios/command/todo (args)
-  (print "todo:")
-  (print args))
+  (if (string-match "\\(.*?\\)\\s-*\\(?:\\[\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\3[0-9]+\\)?\\)\\]\\)?\\s-*$" args)
+      (let* ((task (match-string 1 args))
+             (date-string (or (match-string 2 args) ""))
+             (separator (match-string 3 args)))
+        (push (cons task date-string) helios/todo))
+    (message "[helios|todo] invalid syntax: %s" args)))
 
 (defun helios/load-dashboard ()
-  (setq top-padding (/ (window-total-height) 8))
   (setq left-padding (* (/ (window-total-width) 5) 2))
   (when (< (window-total-width) 100)
     (setq left-padding (/ (window-total-width) 3)))
@@ -150,23 +155,33 @@ emacs --daemon
   (with-current-buffer (helios/buffer)
     (let ((inhibit-read-only t))
       (erase-buffer)
-      (dotimes (y top-padding)
-        (insert "\n"))
-
       (insert "H E L I O S\n")
-
       (insert (format "\"%s\"\n" quote))
+      (setq helios/z (+ helios/z 2))
 
       (when helios/countdown
         (if (>= (cdr helios/countdown) 0)
             (if (string-empty-p (car helios/countdown))
                 (insert (format "<%d days remaining>\n" (cdr helios/countdown)))
-              (insert (format "<%s: %d days remaining>\n" (car helios/countdown) (cdr helios/countdown))))))
+              (insert (format "<%s: %d days remaining>\n" (car helios/countdown) (cdr helios/countdown)))))
+        (setq helios/z (+ helios/z 1)))
 
-      (insert "threads\n")
+      (if (> (length helios/threads) 0)
+          (insert "threads\n"))
+      (setq helios/z (+ helios/z 1))
       (dolist (thread helios/threads)
         (insert (concat "[" (downcase (substring (car thread) 0 1)) "]"
-                        (substring (car thread) 1 (length (car thread))) "\n")))))
+                        (substring (car thread) 1 (length (car thread))) "\n"))
+        (setq helios/z (+ helios/z 1)))
+
+      (if (> (length helios/todo) 0)
+          (insert "todo\n"))
+      (setq helios/z (+ helios/z 1))
+      (dolist (todo helios/todo)
+        (if (string-empty-p (cdr todo))
+            (insert (format "- %s\n" (car todo)))
+          (insert (format "- %s [%s]\n" (car todo) (cdr todo))))
+        (setq helios/z (+ helios/z 1)))))
 
   (switch-to-buffer (helios/buffer))
   (helios/mode-check-buffer)
@@ -179,16 +194,25 @@ emacs --daemon
            (0 'helios/font/quote t))
           ("^<.+>"
            (0 'helios/font/code t))
-          ("threads"
+          ("\\<\\(threads\\|todo\\)\\>"
            (0 'helios/font/h2 t))))
   (setq font-lock-defaults '(helios-dashboard-font-lock))
   (setq-local line-spacing 18)
   (font-lock-mode 1)
 
+  (helios/neutralize-mouse)
+  (if (< helios/z 15)
+      (progn
+        (define-key evil-motion-state-local-map [wheel-up] #'ignore)
+        (define-key evil-motion-state-local-map [wheel-down] #'ignore))
+    (progn
+      (define-key evil-motion-state-local-map [wheel-up] nil)
+      (define-key evil-motion-state-local-map [wheel-down] nil)))
+
   (set-window-margins (selected-window) left-padding 8)
   (visual-line-mode t)
   (read-only-mode 1)
-  (helios/neutralize-mouse)
+  (goto-char (point-min))
 
   (add-hook 'buffer-list-update-hook #'helios/mode-check-buffer))
 
@@ -196,6 +220,24 @@ emacs --daemon
   (get-buffer-create "*helios*"))
 
 (defun helios/mode-check-buffer ()
+  (when (string-equal (buffer-name) "*helios*")
+    (setq-local header-line-format '(" "))
+    (custom-set-faces
+     '(header-line ((t (:background "#18131B" :foreground "#18131B"))))
+     '(header-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
+    (face-remap-add-relative 'header-line '((:height 1300)))
+    (setq-local mode-line-format '(" "))
+    (custom-set-faces
+     '(mode-line ((t (:background "#18131B" :foreground "#18131B"))))
+     '(mode-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
+    (face-remap-add-relative 'mode-line '((:height 1300))))
+
+  (unless (string-equal (buffer-name) "*helios*")
+    (custom-set-faces
+     '(mode-line ((t (:inherit mode-line))))
+     '(mode-line-inactive ((t (:inherit mode-line-inactive))))
+     '(header-line ((t nil)))))
+
   (if (string-match "^\*helios" (buffer-name))
       (helios-mode 1)
     (helios-mode -1)))
@@ -207,9 +249,7 @@ emacs --daemon
   (define-key evil-motion-state-local-map [double-mouse-1] #'ignore)
   (define-key evil-motion-state-local-map [triple-mouse-1] #'ignore)
   (define-key evil-motion-state-local-map [mouse-2] #'ignore)
-  (define-key evil-motion-state-local-map [mouse-3] #'ignore)
-  (define-key evil-motion-state-local-map [wheel-up] #'ignore)
-  (define-key evil-motion-state-local-map [wheel-down] #'ignore))
+  (define-key evil-motion-state-local-map [mouse-3] #'ignore))
 
 (defun helios/generate-threadbinds ()
   (dolist (thread helios/threads)
@@ -380,6 +420,12 @@ evil
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (define-key evil-motion-state-map (kbd "C-`") 'evil-emacs-state)
 (define-key evil-emacs-state-map (kbd "C-`") 'evil-exit-emacs-state)
+#+end_src
+
+disable control-scroll zooming in accidentally
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(define-key global-map (kbd "<C-wheel-up>") #'ignore)
+(define-key global-map (kbd "<C-wheel-down>") #'ignore)
 #+end_src
 
 *** functions
