@@ -65,6 +65,12 @@ emacs --daemon
 (defface helios/font/exclamation
   '((t (:foreground "#e0af68" :weight bold)))
   "helios ! font")
+(defface helios/font/thread-highlight
+  '((t (:foreground "#73daca" :weight bold)))
+  "helios thread highlight font")
+(defface helios/font/command-highlight
+  '((t (:foreground "#bb9af7" :weight bold)))
+  "helios command highlight font")
 
 (defun helios/load-file ()
   (setq helios/threads '())
@@ -84,17 +90,17 @@ emacs --daemon
 
 (defun helios/parser (line)
   (cond
-   ((string-match "^#\\([a-zA-Z0-9_-]+\\)" line)
+   ((string-match "^.*#\\([a-zA-Z0-9_-]+\\).*$" line)
     (let* ((tag (match-string 1 line))
            (tag-thread (assoc tag helios/threads)))
       (if tag-thread
           (setcdr tag-thread (cons line (cdr tag-thread)))
         (push (list tag line) helios/threads))))
 
-   ((string-match "^#{\\([a-zA-Z0-9_-]+\\)}\\s-*\\(.*\\)" line)
+   ((string-match "^.*#{\\([a-zA-Z0-9_-]+\\)}.*$" line)
     (let* ((command (match-string 1 line))
            (command-function (intern (concat "helios/command/" command)))
-           (args (match-string 2 line)))
+           (args (replace-regexp-in-string "#{.*}" "" line)))
       (if (fboundp command-function)
           (funcall command-function args)
         (message "[helios] command not found: %s" command)))))
@@ -209,13 +215,13 @@ emacs --daemon
   (setq helios-dashboard-font-lock
         '(("H E L I O S"
            (0 'helios/font/h1 t))
-          ("^\".+\""
+          ("^\".+\"$"
            (0 'helios/font/quote t))
-          ("^<.+>"
+          ("^<.+>$"
            (0 'helios/font/code t))
-          ("\\<\\(threads\\|todo\\)\\>"
+          ("^\\<\\(threads\\|todo\\)\\>$"
            (0 'helios/font/h2 t))
-          (".*!.*"
+          ("^.*!.*$"
            (0 'helios/font/exclamation t))))
   (setq font-lock-defaults '(helios-dashboard-font-lock))
   (setq-local line-spacing 18)
@@ -295,6 +301,19 @@ emacs --daemon
 
         (switch-to-buffer (current-buffer))
         (read-only-mode t)
+        (goto-char (point-min))
+
+        (setq font-lock-defaults nil)
+        (setq helios-thread-font-lock
+              '((".*!.*"
+                 (0 'helios/font/exclamation t))
+                ("#[[:alnum:]]+"
+                 (0 'helios/font/thread-highlight t))
+                ("#{[[:alnum:]]+}"
+                 (0 'helios/font/command-highlight t))))
+        (setq font-lock-defaults '(helios-thread-font-lock))
+        (font-lock-mode 1)
+
         (visual-line-mode t)
         (mixed-pitch-mode 1)
         (setq-local line-spacing 8)
