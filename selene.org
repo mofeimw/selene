@@ -34,12 +34,6 @@ emacs --daemon
 ;;; require packages
 (require 'calendar)
 
-;;; define helios variables
-(defvar helios/threads '())
-(defvar helios/countdown '())
-(defvar helios/todo '())
-(defvar helios/z 0)
-
 ;;; define helios minor mode
 (define-minor-mode helios-mode
   "helios minor mode"
@@ -68,7 +62,7 @@ emacs --daemon
   '((t (:foreground "#f7768e" :height 150 :family "Fira Code")))
   "helios monospace/code font")
 (defface helios/font/exclamation
-  '((t (:foreground "#e0af68" :weight bold)))
+  '((t (:foreground "#f7768e" :weight bold)))
   "helios ! font")
 (defface helios/font/thread-highlight
   '((t (:foreground "#73daca" :weight bold)))
@@ -76,6 +70,24 @@ emacs --daemon
 (defface helios/font/command-highlight
   '((t (:foreground "#bb9af7" :weight bold)))
   "helios command highlight font")
+(defface helios/font/chunk-description
+  '((t (:foreground "#7aa2f7" :weight bold)))
+  "helios chunk description font")
+(defface helios/font/chunk-recall
+  '((t (:foreground "#e0af68" :weight bold)))
+  "helios chunk recall font")
+
+;;; define helios variables
+(defvar helios/threads '())
+(defvar helios/countdown '())
+(defvar helios/todo '())
+
+(defvar helios/parser/chunk-open nil)
+(defvar helios/parser/chunk-thread nil)
+(defvar helios/parser/chunk-temp '())
+(defvar helios/parser/suppress nil)
+
+(defvar helios/dashboard/z 0)
 
 (defun helios/load-file ()
   "load helios.nyx"
@@ -83,7 +95,13 @@ emacs --daemon
   (setq helios/threads '())
   (setq helios/countdown '())
   (setq helios/todo '())
-  (setq helios/z 0)
+
+  (setq helios/parser/chunk-open nil)
+  (setq helios/parser/chunk-thread nil)
+  (setq helios/parser/chunk-temp '())
+  (setq helios/parser/suppress nil)
+
+  (setq helios/dashboard/z 0)
 
   ;; insert contents into a temporary buffer
   (with-temp-buffer
@@ -100,7 +118,57 @@ emacs --daemon
 
 (defun helios/parser (line)
   "helios parser"
+  ;; don't suppress append by default
+  (setq helios/parser/suppress nil)
+  ;; group chunks together in temporary list
+  (when (and (not (equal line "~")) helios/parser/chunk-open)
+    (setq helios/parser/suppress t)
+    (push line helios/parser/chunk-temp))
+
   (cond
+   ;; parse closing chunk or plain opening chunk
+   ((string-match "^~$" line)
+    (setq helios/parser/suppress t)
+    (if helios/parser/chunk-open
+        ;; closing chunk if flag was open
+        (progn
+          ;; add to main thread
+          (let ((main-thread (assoc "main" helios/threads)))
+            (if main-thread
+                (setcdr main-thread (cons helios/parser/chunk-temp (cdr main-thread)))
+              (push (list "main" helios/parser/chunk-temp) helios/threads)))
+
+          ;; add to thread if tagged
+          (if helios/parser/chunk-thread
+              (let ((thread-list (assoc helios/parser/chunk-thread helios/threads)))
+                (if thread-list
+                    (setcdr thread-list (cons helios/parser/chunk-temp (cdr thread-list)))
+                  (push (list helios/parser/chunk-thread helios/parser/chunk-temp) helios/threads))))
+
+          ;; reset for next chunk
+          (setq helios/parser/chunk-open nil)
+          (setq helios/parser/chunk-temp '()))
+      ;; opening chunk if flag was closed
+      (progn
+        ;; set chunk flag to open
+        (setq helios/parser/chunk-open t)
+        ;; empty description because plain
+        (push "" helios/parser/chunk-temp))))
+
+   ;; parse opening chunk with optional description
+   ((string-match "^~\s*\\([@./'# a-zA-Z0-9]*\\)$" line)
+    (setq helios/parser/suppress t)
+    ;; extract description
+    (let ((description (match-string 1 line)))
+      (push description helios/parser/chunk-temp)
+      ;; extract thread if found
+      (if (string-match ".*#\\([a-zA-Z0-9_-]+\\).*" description)
+          (setq helios/parser/chunk-thread (match-string 1 description))))
+    ;; declare open chunk or error if previous chunk was not closed
+    (if helios/parser/chunk-open
+        (message "[helios] invalid syntax: chunk not closed")
+      (setq helios/parser/chunk-open t)))
+
    ;; parse thread tags
    ((string-match "^.*#\\([a-zA-Z0-9_-]+\\).*$" line)
     ;; pull out name of thread and grab its nested list
@@ -125,8 +193,8 @@ emacs --daemon
           (funcall command-function args)
         (message "[helios] command not found: %s" command)))))
 
-  ;; append all nonempty lines to main thread
-  (unless (string= line "")
+  ;; append all nonempty lines to main thread, if not suppressed
+  (unless (or (string= line "") helios/parser/suppress)
     (let ((main-thread (assoc "main" helios/threads)))
       (if main-thread
           (setcdr main-thread (cons line (cdr main-thread)))
@@ -232,7 +300,10 @@ emacs --daemon
                  "I N V E R T"
                  "lock the fuck in"
                  "garbage in, garbage out"
-                 "day by day but make each count"))
+                 "day by day but make each count"
+                 "the only certainty in life is uncertainty"
+                 "the time will pass anyways..."
+                 "is this all a dream?"))
   ;; pick a random quote
   (setq quote (nth (random (length quotes)) quotes))
 
@@ -245,7 +316,7 @@ emacs --daemon
       (erase-buffer)
       (insert "H E L I O S\n")
       (insert (format "\"%s\"\n" quote))
-      (setq helios/z (+ helios/z 2))
+      (setq helios/dashboard/z (+ helios/dashboard/z 2))
 
       ;; check that countdown is enabled
       (when helios/countdown
@@ -255,12 +326,12 @@ emacs --daemon
                 (insert (format "<%d days remaining>\n" (cdr helios/countdown)))
               (insert (format "<%s: %d days remaining>\n" (car helios/countdown) (cdr helios/countdown)))))
         ;; increment counter
-        (setq helios/z (+ helios/z 1)))
+        (setq helios/dashboard/z (+ helios/dashboard/z 1)))
 
       ;; insert heading if there are todos
       (if (> (length helios/todo) 0)
           (insert "todo\n"))
-      (setq helios/z (+ helios/z 1))
+      (setq helios/dashboard/z (+ helios/dashboard/z 1))
       ;; loop over todos
       (dolist (todo helios/todo)
         ;; insert todo bullet if active
@@ -269,18 +340,18 @@ emacs --daemon
           (if (string-empty-p (cdr todo))
               (insert (format "- %s\n" (car todo)))
             (insert (format "- %s [%s]\n" (car todo) (cdr todo))))
-          (setq helios/z (+ helios/z 1))))
+          (setq helios/dashboard/z (+ helios/dashboard/z 1))))
 
       ;; insert heading if there are threads
       (if (> (length helios/threads) 0)
           (insert "threads\n"))
-      (setq helios/z (+ helios/z 1))
+      (setq helios/dashboard/z (+ helios/dashboard/z 1))
       ;; loop over threads list
       (dolist (thread helios/threads)
         ;; insert formatted thread name with the first letter in brackets to indicate keybind
         (insert (concat "[" (downcase (substring (car thread) 0 1)) "]"
                         (substring (car thread) 1 (length (car thread))) "\n"))
-        (setq helios/z (+ helios/z 1)))))
+        (setq helios/dashboard/z (+ helios/dashboard/z 1)))))
 
   ;; switch to helios buffer and refresh buffer
   (switch-to-buffer (helios/buffer))
@@ -306,7 +377,7 @@ emacs --daemon
   ;; neutralize mouse
   (helios/neutralize-mouse)
   ;; enable scrolling if enough number of lines, otherwise disable
-  (if (< helios/z 15)
+  (if (< helios/dashboard/z 15)
       (progn
         (define-key evil-motion-state-local-map [wheel-up] #'ignore)
         (define-key evil-motion-state-local-map [wheel-down] #'ignore))
@@ -389,12 +460,27 @@ emacs --daemon
     (with-current-buffer (get-buffer-create buffer-name)
       ;; inhibit read only
       (let ((inhibit-read-only t))
-        ;; erase buffer and loop over contents, inserting double spaced
         (erase-buffer)
         (insert "\n")
-        (dolist (line contents)
-          (insert line)
-          (insert "\n\n"))
+        ;; loop over contents of thread
+        (dolist (element contents)
+          ;; insert single lines double spaced
+          (when (stringp element)
+            (insert element)
+            (insert "\n\n"))
+          ;; loop over chunks
+          (when (listp element)
+            ;; first element is the optional description
+            (when (not (string-empty-p (car (last element))))
+              ;; insert chunk description with font
+              (insert (propertize (car (last element)) 'font-lock-face 'helios/font/chunk-description))
+              (insert "\n"))
+            ;; loop over chunk contents and insert, single spaced
+            (dolist (line (butlast element))
+              (insert line)
+              (insert "\n"))
+            ;; pad newline at end
+            (insert "\n")))
 
         ;; switch to buffer, set read only and go to origin point
         (switch-to-buffer (current-buffer))
@@ -409,7 +495,9 @@ emacs --daemon
                 ("#[[:alnum:]]+" ; thread tags
                  (0 'helios/font/thread-highlight t))
                 ("#{[[:alnum:]]+}" ; command tags
-                 (0 'helios/font/command-highlight t))))
+                 (0 'helios/font/command-highlight t))
+                ("@.+" ; daily recall chunk descriptions
+                 (0 'helios/font/chunk-recall t))))
         (setq font-lock-defaults '(helios-thread-font-lock))
         (font-lock-mode 1)
 
