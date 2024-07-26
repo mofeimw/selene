@@ -85,6 +85,7 @@ emacs --daemon
 (defvar helios/parser/chunk-open nil)
 (defvar helios/parser/chunk-thread nil)
 (defvar helios/parser/chunk-temp '())
+(defvar helios/parser/recall-date nil)
 (defvar helios/parser/suppress nil)
 
 (defvar helios/dashboard/z 0)
@@ -99,6 +100,7 @@ emacs --daemon
   (setq helios/parser/chunk-open nil)
   (setq helios/parser/chunk-thread nil)
   (setq helios/parser/chunk-temp '())
+  (setq helios/parser/recall-date nil)
   (setq helios/parser/suppress nil)
 
   (setq helios/dashboard/z 0)
@@ -138,6 +140,13 @@ emacs --daemon
                 (setcdr main-thread (cons helios/parser/chunk-temp (cdr main-thread)))
               (push (list "main" helios/parser/chunk-temp) helios/threads)))
 
+          ;; add to recall thread if recall
+          (if helios/parser/recall-date
+              (let ((thread-list (assoc "recall" helios/threads)))
+                (if thread-list
+                    (setcdr thread-list (cons helios/parser/chunk-temp (cdr thread-list)))
+                  (push (list "recall" helios/parser/chunk-temp) helios/threads))))
+
           ;; add to thread if tagged
           (if helios/parser/chunk-thread
               (let ((thread-list (assoc helios/parser/chunk-thread helios/threads)))
@@ -147,7 +156,10 @@ emacs --daemon
 
           ;; reset for next chunk
           (setq helios/parser/chunk-open nil)
-          (setq helios/parser/chunk-temp '()))
+          (setq helios/parser/chunk-temp '())
+          (if helios/parser/recall-date
+              (setq helios/parser/recall-date nil)))
+
       ;; opening chunk if flag was closed
       (progn
         ;; set chunk flag to open
@@ -161,6 +173,11 @@ emacs --daemon
     ;; extract description
     (let ((description (match-string 1 line)))
       (push description helios/parser/chunk-temp)
+
+      ;; is a daily recall
+      (if (string-match "^@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" description)
+        (setq helios/parser/recall-date (match-string 1 description)))
+
       ;; extract thread if found
       (if (string-match ".*#\\([a-zA-Z0-9_-]+\\).*" description)
           (setq helios/parser/chunk-thread (match-string 1 description))))
@@ -497,7 +514,9 @@ emacs --daemon
                 ("#{[[:alnum:]]+}" ; command tags
                  (0 'helios/font/command-highlight t))
                 ("@.+" ; daily recall chunk descriptions
-                 (0 'helios/font/chunk-recall t))))
+                 (0 'helios/font/chunk-recall t))
+                ("\".*\"" ; quotes (remove formatting)
+                 (0 'default t))))
         (setq font-lock-defaults '(helios-thread-font-lock))
         (font-lock-mode 1)
 
