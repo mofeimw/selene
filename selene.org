@@ -34,9 +34,14 @@ emacs --daemon
 ;;; require packages
 (require 'calendar)
 
-;;; define helios minor mode
+(define-derived-mode nyx-mode fundamental-mode "nyx"
+  "major mode for editing .nyx files"
+  ;; remove pesky autoindented tab after newlines
+  (setq-local indent-line-function 'ignore))
+(add-to-list 'auto-mode-alist '("\\.nyx\\'" . nyx-mode))
+
 (define-minor-mode helios-mode
-  "helios minor mode"
+  "minor mode for helios buffers"
   :lighter "helios"
   :global nil
   ;; toggle mixed pitch mode and cursor color
