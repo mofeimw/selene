@@ -372,12 +372,16 @@ emacs --daemon
                     (insert "...\n"))
 
                 ;; insert word formatted to emphasize keybind in brackets
-                (let ((word (car pair))
-                      (letter (cdr pair)))
-                  (insert (replace-regexp-in-string (regexp-quote letter)
-                                                    (format "[%s]" letter)
-                                                    word)))
-                (insert "\n")
+                ;; split where first occurance of letter is and piece together formatted
+                (let* ((word (car pair))
+                      (letter (cdr pair))
+                      (match (string-match (regexp-quote letter) word 0))
+                      (formatted (concat
+                                  (substring word 0 (match-beginning 0))
+                                  (format "[%s]" letter)
+                                  (substring word (match-end 0))
+                                  "\n")))
+                  (insert formatted))
                 (setq helios/dashboard/z (+ helios/dashboard/z 1)))
               helios/threadkeys)))
 
