@@ -79,6 +79,7 @@ emacs --daemon
 
 ;;; define helios variables
 (defvar helios/threads '())
+(defvar helios/threadkeys '())
 (defvar helios/countdown '())
 (defvar helios/todo '())
 
@@ -94,6 +95,7 @@ emacs --daemon
   "load helios.nyx"
   ;; reset variables
   (setq helios/threads '())
+  (setq helios/threadkeys '())
   (setq helios/countdown '())
   (setq helios/todo '())
 
@@ -157,8 +159,8 @@ emacs --daemon
           ;; reset for next chunk
           (setq helios/parser/chunk-open nil)
           (setq helios/parser/chunk-temp '())
-          (if helios/parser/recall-date
-              (setq helios/parser/recall-date nil)))
+          (setq helios/parser/chunk-thread nil)
+          (setq helios/parser/recall-date nil))
 
       ;; opening chunk if flag was closed
       (progn
@@ -176,7 +178,7 @@ emacs --daemon
 
       ;; is a daily recall
       (if (string-match "^@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" description)
-        (setq helios/parser/recall-date (match-string 1 description)))
+          (setq helios/parser/recall-date (match-string 1 description)))
 
       ;; extract thread if found
       (if (string-match ".*#\\([a-zA-Z0-9_-]+\\).*" description)
@@ -363,12 +365,21 @@ emacs --daemon
       (if (> (length helios/threads) 0)
           (insert "threads\n"))
       (setq helios/dashboard/z (+ helios/dashboard/z 1))
-      ;; loop over threads list
-      (dolist (thread helios/threads)
-        ;; insert formatted thread name with the first letter in brackets to indicate keybind
-        (insert (concat "[" (downcase (substring (car thread) 0 1)) "]"
-                        (substring (car thread) 1 (length (car thread))) "\n"))
-        (setq helios/dashboard/z (+ helios/dashboard/z 1)))))
+      ;; loop over threadkeys list
+      (mapcar (lambda (pair)
+                ;; show continuation if overflowing
+                (if (= helios/dashboard/z 13)
+                    (insert "...\n"))
+
+                ;; insert word formatted to emphasize keybind in brackets
+                (let ((word (car pair))
+                      (letter (cdr pair)))
+                  (insert (replace-regexp-in-string (regexp-quote letter)
+                                                    (format "[%s]" letter)
+                                                    word)))
+                (insert "\n")
+                (setq helios/dashboard/z (+ helios/dashboard/z 1)))
+              helios/threadkeys)))
 
   ;; switch to helios buffer and refresh buffer
   (switch-to-buffer (helios/buffer))
@@ -394,7 +405,7 @@ emacs --daemon
   ;; neutralize mouse
   (helios/neutralize-mouse)
   ;; enable scrolling if enough number of lines, otherwise disable
-  (if (< helios/dashboard/z 15)
+  (if (< helios/dashboard/z 14)
       (progn
         (define-key evil-motion-state-local-map [wheel-up] #'ignore)
         (define-key evil-motion-state-local-map [wheel-down] #'ignore))
@@ -454,15 +465,42 @@ emacs --daemon
   (define-key evil-motion-state-local-map [mouse-2] #'ignore)
   (define-key evil-motion-state-local-map [mouse-3] #'ignore))
 
-(defun helios/generate-threadbinds ()
+(defun helios/generate-thread-keys ()
+  "find unique keys for threads"
+  ;; use a hash table for efficiency
+  (let ((used-letters (make-hash-table))
+        result)
+    ;; loop in reverse to maintain stability because threads are from most recent first
+    (dolist (thread (reverse helios/threads))
+      ;; loop over chracters to find when they are a letter and not already used
+      ;; or if no options are available, pick the first available letter in alphabet
+      (let* ((name (car thread))
+             (unique-letter (or (cl-loop for char across name
+                                         when (and (cl-position char "abcdefghijklmnopqrstuvwxyz")
+                                                   (not (gethash (downcase char) used-letters)))
+                                         return (downcase char))
+                                (cl-loop for char across "abcdefghijklmnopqrstuvwxyz"
+                                         unless (gethash char used-letters)
+                                         return char))))
+        ;; update hash table and results list
+        (when unique-letter
+          (puthash unique-letter t used-letters)
+          ;; convert from char to string
+          (push (cons name (string unique-letter)) result))))
+    ;; set to reverse because push adds to front
+    (setq helios/threadkeys (nreverse result))))
+
+(defun helios/generate-thread-binds ()
   "generate keybinds for helios threads"
-  ;; loop over threads
-  (dolist (thread helios/threads)
-    ;; get name of thread and first letter
-    (let* ((name (car thread))
-           (key (downcase (substring name 0 1))))
+  ;; loop over threadkeys
+  (dolist (pair helios/threadkeys)
+    ;; get name and unique letter of thread
+    ;; and then get the thread itself
+    (let* ((name (car pair))
+           (letter (cdr pair))
+           (thread (assoc name helios/threads)))
       ;; bind the letter key to a lambda function that spawns the thread buffer
-      (evil-local-set-key 'normal (kbd key)
+      (evil-local-set-key 'normal (kbd letter)
                           `(lambda ()
                              (interactive)
                              (helios/spawn-thread ',thread))))))
@@ -533,8 +571,9 @@ emacs --daemon
   "initialize helios"
   (interactive)
   (helios/load-file)
+  (helios/generate-thread-keys)
   (helios/load-dashboard)
-  (helios/generate-threadbinds))
+  (helios/generate-thread-binds))
 
 ;;; provide helios
 (provide 'helios)
