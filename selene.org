@@ -58,13 +58,13 @@ emacs --daemon
   '((t (:foreground "#e0af68" :height 600 :family "Egmond")))
   "helios header 1 font")
 (defface helios/font/h2
-  '((t (:foreground "#b4f9f8" :weight bold :height 200)))
+  '((t (:foreground "#b4f9f8" :weight bold :height 210)))
   "helios header 2 font")
 (defface helios/font/quote
   '((t (:foreground "#bb9af7" :slant italic :height 222 :family "Yrsa")))
   "helios quote font")
 (defface helios/font/code
-  '((t (:foreground "#f7768e" :height 150 :family "Fira Code")))
+  '((t (:foreground "#7aa2f7" :height 150 :family "Fira Code")))
   "helios monospace/code font")
 (defface helios/font/exclamation
   '((t (:foreground "#f7768e" :weight bold)))
@@ -81,6 +81,9 @@ emacs --daemon
 (defface helios/font/chunk-recall
   '((t (:foreground "#e0af68" :weight bold)))
   "helios chunk recall font")
+(defface helios/font/emphasis
+  '((t (:foreground "#b4f9f8")))
+  "helios emphasis font")
 
 ;;; define helios variables
 (defvar helios/threads '())
@@ -94,7 +97,7 @@ emacs --daemon
 (defvar helios/parser/recall-date nil)
 (defvar helios/parser/suppress nil)
 
-(defvar helios/dashboard/z 0)
+(defvar helios/todo/active 0)
 
 (defun helios/load-file ()
   "load helios.nyx"
@@ -110,7 +113,7 @@ emacs --daemon
   (setq helios/parser/recall-date nil)
   (setq helios/parser/suppress nil)
 
-  (setq helios/dashboard/z 0)
+  (setq helios/todo/active 0)
 
   ;; insert contents into a temporary buffer
   (with-temp-buffer
@@ -287,9 +290,11 @@ emacs --daemon
       ;; loop over all todos
       (dolist (item helios/todo)
         ;; set found flag to true and mark todo as completed when found
+        ;; decrement to keep count of active uncompleted todos
         (when (string= task (car item))
           (setq found t)
-          (setcdr item "x")))
+          (setcdr item "x")
+          (setq helios/todo/active (- helios/todo/active 1))))
       ;; log warning if todo was never found
       (unless found
         (message "[helios|todo] task not found: %s" task))))
@@ -301,7 +306,9 @@ emacs --daemon
            (date-string (or (match-string 2 args) ""))
            (separator (match-string 3 args)))
       ;; push cons cell of task and date string to todos
-      (push (cons task date-string) helios/todo)))
+      (push (cons task date-string) helios/todo)
+      ;; keep track of active todos
+      (setq helios/todo/active (+ helios/todo/active 1))))
 
    ;; catchall indicates no valid syntax was matched
    ;; invalid syntax - log warning
@@ -335,12 +342,10 @@ emacs --daemon
   (with-current-buffer (helios/buffer)
     ;; inhibit read only in buffer
     (let ((inhibit-read-only t))
-      ;; erase buffer, insert random quote and increment line counter z by 2
-      ;; increment z line counter accordingly onwards
+      ;; erase buffer and insert headline and random quote
       (erase-buffer)
       (insert "H E L I O S\n")
       (insert (format "\"%s\"\n" quote))
-      (setq helios/dashboard/z (+ helios/dashboard/z 2))
 
       ;; check that countdown is enabled
       (when helios/countdown
@@ -348,47 +353,47 @@ emacs --daemon
             ;; insert formatted countdown depending on if description is provided
             (if (string-empty-p (car helios/countdown))
                 (insert (format "<%d days remaining>\n" (cdr helios/countdown)))
-              (insert (format "<%s: %d days remaining>\n" (car helios/countdown) (cdr helios/countdown)))))
-        ;; increment counter
-        (setq helios/dashboard/z (+ helios/dashboard/z 1)))
-
-      ;; insert heading if there are todos
-      (if (> (length helios/todo) 0)
-          (insert "todo\n"))
-      (setq helios/dashboard/z (+ helios/dashboard/z 1))
-      ;; loop over todos
-      (dolist (todo helios/todo)
-        ;; insert todo bullet if active
-        (unless (string= "x" (cdr todo))
-          ;; format depending on whether deadline is provided
-          (if (string-empty-p (cdr todo))
-              (insert (format "- %s\n" (car todo)))
-            (insert (format "- %s [%s]\n" (car todo) (cdr todo))))
-          (setq helios/dashboard/z (+ helios/dashboard/z 1))))
+              (insert (format "<%s: %d days remaining>\n" (car helios/countdown) (cdr helios/countdown))))))
 
       ;; insert heading if there are threads
       (if (> (length helios/threads) 0)
           (insert "threads\n"))
-      (setq helios/dashboard/z (+ helios/dashboard/z 1))
-      ;; loop over threadkeys list
-      (mapcar (lambda (pair)
-                ;; show continuation if overflowing
-                (if (= helios/dashboard/z 13)
-                    (insert "...\n"))
+      (let ((count 0))
+        (catch 'break
+          ;; loop over threadkeys list
+          (mapcar (lambda (pair)
+                    ;; break to only show first 4 threads
+                    (when (> count 3)
+                      (throw 'break nil))
+                    ;; insert word formatted to emphasize keybind
+                    ;; split where first occurance of letter is and piece together
+                    (let* ((word (car pair))
+                           (letter (cdr pair))
+                           (match (string-match (regexp-quote letter) word 0)))
+                      (insert (substring word 0 (match-beginning 0)))
+                      (insert (propertize letter 'font-lock-face 'helios/font/emphasis))
+                      (insert (substring word (match-end 0)))
+                      (insert "\n")
+                      (setq count (+ count 1))))
+                  helios/threadkeys))
 
-                ;; insert word formatted to emphasize keybind in brackets
-                ;; split where first occurance of letter is and piece together formatted
-                (let* ((word (car pair))
-                      (letter (cdr pair))
-                      (match (string-match (regexp-quote letter) word 0))
-                      (formatted (concat
-                                  (substring word 0 (match-beginning 0))
-                                  (format "[%s]" letter)
-                                  (substring word (match-end 0))
-                                  "\n")))
-                  (insert formatted))
-                (setq helios/dashboard/z (+ helios/dashboard/z 1)))
-              helios/threadkeys)))
+      ;; insert heading if there are active todos
+      (if (> helios/todo/active 0)
+          (insert "todo\n"))
+      ;; loop over todos
+      (let ((count 0))
+        (catch 'break
+          (dolist (todo helios/todo)
+            ;; break to only show first 4 todos
+            (when (> count 3)
+              (throw 'break nil))
+            ;; insert todo bullet if active
+            (unless (string= "x" (cdr todo))
+              (setq count (+ count 1))
+              ;; format depending on whether deadline is provided
+              (if (string-empty-p (cdr todo))
+                  (insert (format "• %s\n" (car todo)))
+                (insert (format "• %s [%s]\n" (car todo) (cdr todo)))))))))))
 
   ;; switch to helios buffer and refresh buffer
   (switch-to-buffer (helios/buffer))
@@ -411,16 +416,17 @@ emacs --daemon
   (setq-local line-spacing 18)
   (font-lock-mode 1)
 
-  ;; neutralize mouse
   (helios/neutralize-mouse)
-  ;; enable scrolling if enough number of lines, otherwise disable
-  (if (< helios/dashboard/z 14)
-      (progn
-        (define-key evil-motion-state-local-map [wheel-up] #'ignore)
-        (define-key evil-motion-state-local-map [wheel-down] #'ignore))
-    (progn
-      (define-key evil-motion-state-local-map [wheel-up] nil)
-      (define-key evil-motion-state-local-map [wheel-down] nil)))
+
+  ;; bind thread and todo expansion buffers
+  (evil-local-set-key 'normal (kbd "1")
+                      `(lambda ()
+                         (interactive)
+                         (helios/threads)))
+  (evil-local-set-key 'normal (kbd "2")
+                      `(lambda ()
+                         (interactive)
+                         (helios/todo)))
 
   ;; set margins, enable line wrapping, set read only and go to origin point
   (set-window-margins (selected-window) margin-left 8)
@@ -430,6 +436,14 @@ emacs --daemon
 
   ;; hook into buffer list update
   (add-hook 'buffer-list-update-hook #'helios/buffer-hook))
+
+(defun helios/threads ()
+  "helios expansion buffer to display all threads"
+  (message "threads"))
+
+(defun helios/todo ()
+  "helios expansion buffer to display all todos"
+  (message "todo"))
 
 (defun helios/buffer ()
   "get or create helios buffer"
@@ -472,7 +486,9 @@ emacs --daemon
   (define-key evil-motion-state-local-map [double-mouse-1] #'ignore)
   (define-key evil-motion-state-local-map [triple-mouse-1] #'ignore)
   (define-key evil-motion-state-local-map [mouse-2] #'ignore)
-  (define-key evil-motion-state-local-map [mouse-3] #'ignore))
+  (define-key evil-motion-state-local-map [mouse-3] #'ignore)
+  (define-key evil-motion-state-local-map [wheel-up] #'ignore)
+  (define-key evil-motion-state-local-map [wheel-down] #'ignore))
 
 (defun helios/generate-thread-keys ()
   "find unique keys for threads"
@@ -496,8 +512,7 @@ emacs --daemon
           (puthash unique-letter t used-letters)
           ;; convert from char to string
           (push (cons name (string unique-letter)) result))))
-    ;; set to reverse because push adds to front
-    (setq helios/threadkeys (nreverse result))))
+    (setq helios/threadkeys result)))
 
 (defun helios/generate-thread-binds ()
   "generate keybinds for helios threads"
