@@ -422,11 +422,11 @@ emacs --daemon
   (evil-local-set-key 'normal (kbd "1")
                       `(lambda ()
                          (interactive)
-                         (helios/threads)))
+                         (funcall 'helios/spawn-buffer "threads" #'helios/threads-content)))
   (evil-local-set-key 'normal (kbd "2")
                       `(lambda ()
                          (interactive)
-                         (helios/todo)))
+                         (funcall 'helios/spawn-buffer "todo" #'helios/todo-content)))
 
   ;; set margins, enable line wrapping, set read only and go to origin point
   (set-window-margins (selected-window) margin-left 8)
@@ -436,14 +436,6 @@ emacs --daemon
 
   ;; hook into buffer list update
   (add-hook 'buffer-list-update-hook #'helios/buffer-hook))
-
-(defun helios/threads ()
-  "helios expansion buffer to display all threads"
-  (message "threads"))
-
-(defun helios/todo ()
-  "helios expansion buffer to display all todos"
-  (message "todo"))
 
 (defun helios/buffer ()
   "get or create helios buffer"
@@ -593,6 +585,25 @@ emacs --daemon
         (insert "\n"))
       ;; pad newline at end
       (insert "\n"))))
+
+(defun helios/threads-content ()
+  "helios expansion buffer to display all threads"
+  (insert (propertize "threads\n" 'font-lock-face 'helios/font/h2))
+  (mapcar (lambda (pair)
+            (let* ((word (car pair))
+                   (letter (cdr pair))
+                   (match (string-match (regexp-quote letter) word 0)))
+              (insert (substring word 0 (match-beginning 0)))
+              (insert (propertize letter 'font-lock-face 'helios/font/emphasis))
+              (insert (substring word (match-end 0)))
+              (insert "\n")))
+          helios/threadkeys)
+  (switch-to-buffer (current-buffer))
+  (helios/generate-thread-binds))
+
+(defun helios/todo-content ()
+  "helios expansion buffer to display all todos"
+  (insert "todo"))
 
 (defun helios ()
   "initialize helios"
