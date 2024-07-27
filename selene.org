@@ -527,69 +527,72 @@ emacs --daemon
       (evil-local-set-key 'normal (kbd letter)
                           `(lambda ()
                              (interactive)
-                             (helios/spawn-thread ',thread))))))
+                             (helios/spawn-buffer (car ',thread) #'helios/thread-content ',thread))))))
 
-(defun helios/spawn-thread (thread)
-  "spawn buffer displaying helios thread contents"
+(defun helios/spawn-buffer (buffer-name content-function &optional args)
+  "spawn a helios buffer with variable contents"
+  (with-current-buffer (get-buffer-create (format "*helios/%s*" buffer-name))
+    ;; inhibit read only
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert "\n")
+      ;; call the function passed in to generate contents
+      ;; pass along an optional argument if available
+      (if args
+          (funcall content-function args)
+        (funcall content-function))
+
+      ;; switch to buffer, set read only and go to origin point
+      (switch-to-buffer (current-buffer))
+      (read-only-mode t)
+      (goto-char (point-min))
+
+      ;; set fonts
+      (setq font-lock-defaults nil)
+      (setq helios-thread-font-lock
+            '((".*!.*" ; lines containing !
+               (0 'helios/font/exclamation t))
+              ("#[[:alnum:]]+" ; thread tags
+               (0 'helios/font/thread-highlight t))
+              ("#{[[:alnum:]]+}" ; command tags
+               (0 'helios/font/command-highlight t))
+              ("@.+" ; daily recall chunk descriptions
+               (0 'helios/font/chunk-recall t))
+              ("\".*\"" ; quotes (remove formatting)
+               (0 'default t))))
+      (setq font-lock-defaults '(helios-thread-font-lock))
+      (font-lock-mode 1)
+
+      ;; enable line wrapping, mixed pitch mode
+      (visual-line-mode t)
+      (mixed-pitch-mode 1)
+      ;; set line spacing and window margins
+      (setq-local line-spacing 8)
+      (set-window-margins (selected-window) 4 4)
+      ;; press q to return to dashboard
+      (evil-local-set-key 'normal (kbd "q") 'helios))))
+
+(defun helios/thread-content (thread)
+  "render content for individual helios thread buffers"
   ;; get name, contents, and make buffer name
-  (let* ((name (car thread))
-         (contents (cdr thread))
-         (buffer-name (format "*helios/%s*" name)))
-    ;; get or create thread buffer
-    (with-current-buffer (get-buffer-create buffer-name)
-      ;; inhibit read only
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (insert "\n")
-        ;; loop over contents of thread
-        (dolist (element contents)
-          ;; insert single lines double spaced
-          (when (stringp element)
-            (insert element)
-            (insert "\n\n"))
-          ;; loop over chunks
-          (when (listp element)
-            ;; first element is the optional description
-            (when (not (string-empty-p (car (last element))))
-              ;; insert chunk description with font
-              (insert (propertize (car (last element)) 'font-lock-face 'helios/font/chunk-description))
-              (insert "\n"))
-            ;; loop over chunk contents and insert, single spaced
-            (dolist (line (butlast element))
-              (insert line)
-              (insert "\n"))
-            ;; pad newline at end
-            (insert "\n")))
-
-        ;; switch to buffer, set read only and go to origin point
-        (switch-to-buffer (current-buffer))
-        (read-only-mode t)
-        (goto-char (point-min))
-
-        ;; set fonts
-        (setq font-lock-defaults nil)
-        (setq helios-thread-font-lock
-              '((".*!.*" ; lines containing !
-                 (0 'helios/font/exclamation t))
-                ("#[[:alnum:]]+" ; thread tags
-                 (0 'helios/font/thread-highlight t))
-                ("#{[[:alnum:]]+}" ; command tags
-                 (0 'helios/font/command-highlight t))
-                ("@.+" ; daily recall chunk descriptions
-                 (0 'helios/font/chunk-recall t))
-                ("\".*\"" ; quotes (remove formatting)
-                 (0 'default t))))
-        (setq font-lock-defaults '(helios-thread-font-lock))
-        (font-lock-mode 1)
-
-        ;; enable line wrapping, mixed pitch mode
-        (visual-line-mode t)
-        (mixed-pitch-mode 1)
-        ;; set line spacing and window margins
-        (setq-local line-spacing 8)
-        (set-window-margins (selected-window) 4 4)
-        ;; press q to return to dashboard
-        (evil-local-set-key 'normal (kbd "q") 'helios)))))
+  (dolist (element (cdr thread))
+    ;; insert single lines double spaced
+    (when (stringp element)
+      (insert element)
+      (insert "\n\n"))
+    ;; loop over chunks
+    (when (listp element)
+      ;; first element is the optional description
+      (when (not (string-empty-p (car (last element))))
+        ;; insert chunk description with font
+        (insert (propertize (car (last element)) 'font-lock-face 'helios/font/chunk-description))
+        (insert "\n"))
+      ;; loop over chunk contents and insert, single spaced
+      (dolist (line (reverse (butlast element)))
+        (insert line)
+        (insert "\n"))
+      ;; pad newline at end
+      (insert "\n"))))
 
 (defun helios ()
   "initialize helios"
