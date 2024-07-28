@@ -355,8 +355,19 @@ emacs --daemon
 
 (defun helios/command/include (args)
   "helios include command"
-  (when (file-exists-p (string-trim args))
-    (helios/load-file (string-trim args) t)))
+  ;; push include line before including file instead of after
+  (let ((main-thread (assoc "main" helios/threads)))
+    (if main-thread
+        (setcdr main-thread (cons (format "#{include} %s" args) (cdr main-thread)))
+      (push (list "main" (format "#{include} %s" args)) helios/threads)))
+
+  ;; load file if it exists
+  (if (file-exists-p (string-trim args))
+      (helios/load-file (string-trim args) t)
+    (message "[helios|include] file not found: %s" args))
+
+  ;; suppress because line was already pushed
+  (setq helios/parser/suppress t))
 
 (defun helios/load-dashboard ()
   "load helios dashboard"
@@ -701,7 +712,7 @@ emacs --daemon
 (defun helios/spawn-recall-thread ()
   "spawn thread buffer for individual recall days"
   (interactive)
-  ;; get the line the cursor is on and strip of newline
+  ;; get the line the cursor is on and strip newline
   (let ((line (thing-at-point 'line t)))
     (setq line (replace-regexp-in-string "\n" "" line))
     ;; make sure the line isn't blank
@@ -717,6 +728,7 @@ emacs --daemon
   ;; set a flag to know when the day has ended
   (let ((day-start-flag nil))
     (dolist (entry (assoc "main" helios/threads))
+      ;; render everything from that day
       (when day-start-flag
         ;; entry is a chunk
         (when (listp entry)
@@ -737,8 +749,9 @@ emacs --daemon
             ;; padding
             (insert "\n")))
 
-        ;; simply render single string entries
+        ;; entry is a string
         (when (stringp entry)
+          ;; simply insert double spaced
           (insert entry)
           (insert "\n\n")))
 
@@ -746,6 +759,7 @@ emacs --daemon
       (when (listp entry)
         (if (equal entry current)
             (setq day-start-flag t)))))
+
   ;; render date
   (insert line)
   (insert "\n")
