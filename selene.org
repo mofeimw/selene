@@ -105,25 +105,26 @@ emacs --daemon
 
 (defvar helios/todo/active 0)
 
-(defun helios/load-file ()
+(defun helios/load-file (file &optional include)
   "load helios.nyx"
-  ;; reset variables
-  (setq helios/threads '())
-  (setq helios/threadkeys '())
-  (setq helios/countdown '())
-  (setq helios/todo '())
+  ;; reset variables unless including
+  (unless include
+    (setq helios/threads '())
+    (setq helios/threadkeys '())
+    (setq helios/countdown '())
+    (setq helios/todo '())
 
-  (setq helios/parser/chunk-open nil)
-  (setq helios/parser/chunk-thread nil)
-  (setq helios/parser/chunk-temp '())
-  (setq helios/parser/recall-date nil)
-  (setq helios/parser/suppress nil)
+    (setq helios/parser/chunk-open nil)
+    (setq helios/parser/chunk-thread nil)
+    (setq helios/parser/chunk-temp '())
+    (setq helios/parser/recall-date nil)
+    (setq helios/parser/suppress nil)
 
-  (setq helios/todo/active 0)
+    (setq helios/todo/active 0))
 
   ;; insert contents into a temporary buffer
   (with-temp-buffer
-    (insert-file-contents "~/helios.nyx")
+    (insert-file-contents file)
     (goto-char (point-min))
     ;; read line by line
     (while (not (eobp))
@@ -352,6 +353,11 @@ emacs --daemon
    (t
     (message "[helios|todo] invalid syntax: %s" args))))
 
+(defun helios/command/include (args)
+  "helios include command"
+  (when (file-exists-p (string-trim args))
+    (helios/load-file (string-trim args) t)))
+
 (defun helios/load-dashboard ()
   "load helios dashboard"
   ;; set left margin to 2/5 of window width
@@ -459,15 +465,25 @@ emacs --daemon
 
   (helios/neutralize-mouse)
 
-  ;; bind thread and todo expansion buffers
+  ;; bind threads expansion buffer
   (evil-local-set-key 'normal (kbd "1")
                       `(lambda ()
                          (interactive)
                          (funcall 'helios/spawn-buffer "threads" #'helios/threads-content)))
+  ;; bind todo expansion buffer
   (evil-local-set-key 'normal (kbd "2")
                       `(lambda ()
                          (interactive)
                          (funcall 'helios/spawn-buffer "todo" #'helios/todo-content)))
+  ;; bind recall expansion buffer to both @ and 3
+  (evil-local-set-key 'normal (kbd "3")
+                      `(lambda ()
+                         (interactive)
+                         (funcall 'helios/spawn-buffer "recall" #'helios/recall-content)))
+  (evil-local-set-key 'normal (kbd "@")
+                      `(lambda ()
+                         (interactive)
+                         (funcall 'helios/spawn-buffer "recall" #'helios/recall-content)))
 
   ;; set margins, enable line wrapping, set read only and go to origin point
   (set-window-margins (selected-window) margin-left 8)
@@ -569,6 +585,7 @@ emacs --daemon
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert "\n")
+
       ;; call the function passed in to generate contents
       ;; pass along an optional argument if available
       (if args
@@ -593,6 +610,8 @@ emacs --daemon
                (0 'helios/font/chunk-recall t))
               ("\".*\"" ; quotes (remove formatting)
                (0 'default t))
+              ("^\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" ; daily recall dates
+               (0 'helios/font/chunk-recall t))
               ("\\[.*\\]" ; normal todo items
                (0 'helios/font/emphasis t))
               ("\\[.* day.*\\]" ; urgent todo items
@@ -667,10 +686,78 @@ emacs --daemon
     (dolist (todo completed)
       (insert (propertize (format "• %s\n" todo) 'font-lock-face 'helios/font/inactive)))))
 
+(defun helios/recall-content ()
+  "helios expansion buffer to display all recalls"
+  (dolist (entry (assoc "main" helios/threads))
+    ;; render only dates of recalls
+    (if (listp entry)
+        (when (string-match "^@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" (car (last entry)))
+          (insert (match-string 1 (car (last entry))))
+          (insert "\n"))))
+  ;; switch to buffer and bind enter key for selections
+  (switch-to-buffer (current-buffer))
+  (evil-local-set-key 'normal (kbd "RET") #'helios/spawn-recall-thread))
+
+(defun helios/spawn-recall-thread ()
+  "spawn thread buffer for individual recall days"
+  (interactive)
+  ;; get the line the cursor is on and strip of newline
+  (let ((line (thing-at-point 'line t)))
+    (setq line (replace-regexp-in-string "\n" "" line))
+    ;; make sure the line isn't blank
+    (unless (string-empty-p line)
+      (dolist (entry (assoc "main" helios/threads))
+        ;; spawn recall thread buffer if it is the right date
+        (when (listp entry)
+          (if (string-match (concat ".*@" line ".*") (car (last entry)))
+              (helios/spawn-buffer line #'helios/recall-thread-content entry)))))))
+
+(defun helios/recall-thread-content (current)
+  "render content for individual recall day thread buffers"
+  ;; set a flag to know when the day has ended
+  (let ((day-start-flag nil))
+    (dolist (entry (assoc "main" helios/threads))
+      (when day-start-flag
+        ;; entry is a chunk
+        (when (listp entry)
+          ;; a new recall marks another day beginning
+          (when (string-match-p "@" (car (last entry)))
+            (setq day-start-flag nil))
+          ;; check again that the day has not ended
+          (when day-start-flag
+            ;; inside the listp so this must be a chunk
+            ;; render chunk description if applicable
+            (when (not (string-empty-p (car (last entry))))
+              (insert (propertize (car (last entry)) 'font-lock-face 'helios/font/chunk-description))
+              (insert "\n"))
+            ;; insert the chunk contents
+            (dolist (item (reverse (butlast entry)))
+              (insert item)
+              (insert "\n"))
+            ;; padding
+            (insert "\n")))
+
+        ;; simply render single string entries
+        (when (stringp entry)
+          (insert entry)
+          (insert "\n\n")))
+
+      ;; set flag when specified date is found
+      (when (listp entry)
+        (if (equal entry current)
+            (setq day-start-flag t)))))
+  ;; render date
+  (insert line)
+  (insert "\n")
+  ;; and then the rest of the day's recall
+  (dolist (line (reverse (butlast entry)))
+    (insert line)
+    (insert "\n")))
+
 (defun helios ()
   "initialize helios"
   (interactive)
-  (helios/load-file)
+  (helios/load-file "helios.nyx")
   (helios/generate-thread-keys)
   (helios/load-dashboard)
   (helios/generate-thread-binds))
