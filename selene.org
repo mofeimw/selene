@@ -132,7 +132,38 @@ emacs --daemon
                    (line-end-position))))
         ;; parse each line
         (helios/parser line)
-        (forward-line 1)))))
+        (forward-line 1))))
+
+  ;; sort through todos
+  (let ((upcoming '())
+        (urgent '())
+        (others '()))
+    (dolist (todo helios/todo)
+      ;; test if date deadline is set
+      (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\)" (cdr todo))
+          ;; extract separator (. or /) and parse date and calculate days until then
+          (let* ((separator (match-string 2 (cdr todo)))
+                 (date (helios/parse-date (cdr todo) separator))
+                 (days-between (- (calendar-absolute-from-gregorian date)
+                                  (calendar-absolute-from-gregorian (calendar-current-date)))))
+            ;; upcoming items are in the next two weeks
+            (if (< days-between 15)
+                (progn
+                  ;; change the deadline component to the number of days remaining
+                  ;; make sure the grammar matches plural/singular
+                  (if (= days-between 1)
+                      (setcdr todo (format "%d day" days-between))
+                    (setcdr todo (format "%d days" days-between)))
+                  (push todo upcoming))
+              ;; not urgent so don't do anything... yet
+              (push todo others)))
+        ;; also push to urgent if todo contains !
+        ;; otherwise push to others
+        (if (string-match ".*!.*" (car todo))
+            (push todo urgent)
+          (push todo others))))
+    ;; reconstruct todo list with urgent items in front
+    (setq helios/todo (append (nreverse urgent) (nreverse upcoming) (nreverse others)))))
 
 (defun helios/parser (line)
   "helios parser"
@@ -417,6 +448,10 @@ emacs --daemon
           ("^\\<\\(threads\\|todo\\)\\>$"
            (0 'helios/font/h2 t))
           ("^.*!.*$"
+           (0 'helios/font/exclamation t))
+          ("\\[.*\\]"
+           (0 'helios/font/emphasis t))
+          ("\\[.* day.*\\]"
            (0 'helios/font/exclamation t))))
   (setq font-lock-defaults '(helios-dashboard-font-lock))
   (setq-local line-spacing 18)
@@ -557,7 +592,11 @@ emacs --daemon
               ("@.+" ; daily recall chunk descriptions
                (0 'helios/font/chunk-recall t))
               ("\".*\"" ; quotes (remove formatting)
-               (0 'default t))))
+               (0 'default t))
+              ("\\[.*\\]" ; normal todo items
+               (0 'helios/font/emphasis t))
+              ("\\[.* day.*\\]" ; urgent todo items
+               (0 'helios/font/exclamation t))))
       (setq font-lock-defaults '(helios-thread-font-lock))
       (font-lock-mode 1)
 
