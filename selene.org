@@ -60,6 +60,9 @@ emacs --daemon
 (defface helios/font/h2
   '((t (:foreground "#b4f9f8" :weight bold :height 210)))
   "helios header 2 font")
+(defface helios/font/h4
+  '((t (:foreground "#bb9af7" :weight bold :height 200)))
+  "helios header 4 font")
 (defface helios/font/quote
   '((t (:foreground "#bb9af7" :slant italic :height 222 :family "Yrsa")))
   "helios quote font")
@@ -67,10 +70,10 @@ emacs --daemon
   '((t (:foreground "#7aa2f7" :height 150 :family "Fira Code")))
   "helios monospace/code font")
 (defface helios/font/exclamation
-  '((t (:foreground "#f7768e" :weight bold)))
+  '((t (:foreground "#f7768e")))
   "helios ! font")
 (defface helios/font/thread-highlight
-  '((t (:foreground "#73daca" :weight bold)))
+  '((t (:foreground "#b4f9f8" :weight bold)))
   "helios thread highlight font")
 (defface helios/font/command-highlight
   '((t (:foreground "#bb9af7" :weight bold)))
@@ -84,6 +87,9 @@ emacs --daemon
 (defface helios/font/emphasis
   '((t (:foreground "#b4f9f8")))
   "helios emphasis font")
+(defface helios/font/inactive
+  '((t (:foreground "#8b7694")))
+  "helios inactive font")
 
 ;;; define helios variables
 (defvar helios/threads '())
@@ -543,7 +549,7 @@ emacs --daemon
       (setq font-lock-defaults nil)
       (setq helios-thread-font-lock
             '((".*!.*" ; lines containing !
-               (0 'helios/font/exclamation t))
+               (0 'helios/font/exclamation nil))
               ("#[[:alnum:]]+" ; thread tags
                (0 'helios/font/thread-highlight t))
               ("#{[[:alnum:]]+}" ; command tags
@@ -589,6 +595,7 @@ emacs --daemon
 (defun helios/threads-content ()
   "helios expansion buffer to display all threads"
   (insert (propertize "threads\n" 'font-lock-face 'helios/font/h2))
+  ;; loop over threads and insert with keybind letter highlighted
   (mapcar (lambda (pair)
             (let* ((word (car pair))
                    (letter (cdr pair))
@@ -598,12 +605,28 @@ emacs --daemon
               (insert (substring word (match-end 0)))
               (insert "\n")))
           helios/threadkeys)
+  ;; switch to buffer and bind the keys
   (switch-to-buffer (current-buffer))
   (helios/generate-thread-binds))
 
 (defun helios/todo-content ()
   "helios expansion buffer to display all todos"
-  (insert "todo"))
+  (insert (propertize "todo\n" 'font-lock-face 'helios/font/h2))
+  (let ((completed '()))
+    ;; loop over todos and save them for later if they are completed or insert into buffer if not
+    (dolist (todo helios/todo)
+      (if (string= "x" (cdr todo))
+          (push (car todo) completed)
+        (if (string-empty-p (cdr todo))
+            (insert (format "• %s\n" (car todo)))
+          (insert (format "• %s [%s]\n" (car todo) (cdr todo))))))
+
+    ;; render completed heading if there are completed todos
+    (if (> (length completed) 0)
+        (insert (propertize "\ncompleted\n" 'font-lock-face 'helios/font/h4)))
+    ;; loop and insert the completed todos in, greyed out
+    (dolist (todo completed)
+      (insert (propertize (format "• %s\n" todo) 'font-lock-face 'helios/font/inactive)))))
 
 (defun helios ()
   "initialize helios"
