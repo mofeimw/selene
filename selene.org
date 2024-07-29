@@ -66,8 +66,11 @@ emacs --daemon
 (defface helios/font/quote
   '((t (:foreground "#bb9af7" :slant italic :height 222 :family "Yrsa")))
   "helios quote font")
+(defface helios/font/reminder
+  '((t (:foreground "#f7768e" :height 144 :family "Annie Use Your Telescope")))
+  "helios reminder font")
 (defface helios/font/code
-  '((t (:foreground "#7aa2f7" :height 150 :family "Fira Code")))
+  '((t (:foreground "#7aa2f7" :height 145 :family "Fira Code")))
   "helios monospace/code font")
 (defface helios/font/exclamation
   '((t (:foreground "#f7768e")))
@@ -96,6 +99,7 @@ emacs --daemon
 (defvar helios/threadkeys '())
 (defvar helios/countdown '())
 (defvar helios/todo '())
+(defvar helios/reminders '())
 
 (defvar helios/parser/chunk-open nil)
 (defvar helios/parser/chunk-thread nil)
@@ -113,6 +117,7 @@ emacs --daemon
     (setq helios/threadkeys '())
     (setq helios/countdown '())
     (setq helios/todo '())
+    (setq helios/reminders '())
 
     (setq helios/parser/chunk-open nil)
     (setq helios/parser/chunk-thread nil)
@@ -147,8 +152,8 @@ emacs --daemon
                  (date (helios/parse-date (cdr todo) separator))
                  (days-between (- (calendar-absolute-from-gregorian date)
                                   (calendar-absolute-from-gregorian (calendar-current-date)))))
-            ;; upcoming items are in the next two weeks
-            (if (< days-between 15)
+            ;; upcoming items are in the next 10 days
+            (if (< days-between 11)
                 (progn
                   ;; change the deadline component to the number of days remaining
                   ;; make sure the grammar matches plural/singular
@@ -176,7 +181,7 @@ emacs --daemon
     (push line helios/parser/chunk-temp))
 
   (cond
-   ;; parse comments, ignoring
+   ;; parse comments by ignoring
    ((string-match "^;;.*$" line) nil)
 
    ;; parse closing chunk or plain opening chunk
@@ -356,6 +361,18 @@ emacs --daemon
    (t
     (message "[helios|todo] invalid syntax: %s" args))))
 
+(defun helios/command/reminder (args)
+  "helios reminder command"
+  (if (string-match " \\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" args)
+      ;; pull out date, separator, reminder, and then parse date string into list
+      (let* ((date-string (match-string 1 args))
+             (separator (match-string 2 args))
+             (reminder (string-trim (replace-regexp-in-string date-string "" args)))
+             (date (helios/parse-date date-string separator)))
+        ;; push as cons cell into reminders list
+        (push (cons date reminder) helios/reminders))
+    (message "[helios|reminder] invalid syntax: %s" args)))
+
 (defun helios/command/include (args)
   "helios include command"
   ;; push include line before including file instead of after
@@ -403,6 +420,12 @@ emacs --daemon
       (erase-buffer)
       (insert "H E L I O S\n")
       (insert (format "\"%s\"\n" quote))
+
+      ;; insert reminders if they fall on today
+      (dolist (reminder helios/reminders)
+        (when (equal (car reminder) (calendar-current-date))
+          (insert (propertize (cdr reminder) 'font-lock-face 'helios/font/reminder))
+          (insert "\n")))
 
       ;; check that countdown is enabled
       (when helios/countdown
