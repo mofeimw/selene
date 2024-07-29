@@ -34,6 +34,7 @@ emacs --daemon
 ;;; require packages
 (require 'calendar)
 
+;;; MODES
 (define-derived-mode nyx-mode fundamental-mode "nyx"
   "major mode for editing .nyx files"
   ;; remove pesky autoindented tab after newlines
@@ -53,7 +54,7 @@ emacs --daemon
       (mixed-pitch-mode -1)
       (setq-local evil-normal-state-cursor '("#b4f9f8" box)))))
 
-;;; define helios fonts
+;;; FONTS
 (defface helios/font/h1
   '((t (:foreground "#e0af68" :height 600 :family "Egmond")))
   "helios header 1 font")
@@ -94,7 +95,7 @@ emacs --daemon
   '((t (:foreground "#8b7694")))
   "helios inactive font")
 
-;;; define helios variables
+;;; VARIABLES
 (defvar helios/threads '())
 (defvar helios/threadkeys '())
 (defvar helios/countdown '())
@@ -108,6 +109,15 @@ emacs --daemon
 (defvar helios/parser/suppress nil)
 
 (defvar helios/todo/active 0)
+
+;;; CORE
+(defun helios ()
+  "initialize helios"
+  (interactive)
+  (helios/load-file "helios.nyx")
+  (helios/threads/binds/generate)
+  (helios/dashboard)
+  (helios/threads/binds/map))
 
 (defun helios/load-file (file &optional include)
   "load helios.nyx"
@@ -149,7 +159,7 @@ emacs --daemon
       (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\)" (cdr todo))
           ;; extract separator (. or /) and parse date and calculate days until then
           (let* ((separator (match-string 2 (cdr todo)))
-                 (date (helios/parse-date (cdr todo) separator))
+                 (date (helios/utility/parse-date (cdr todo) separator))
                  (days-between (- (calendar-absolute-from-gregorian date)
                                   (calendar-absolute-from-gregorian (calendar-current-date)))))
             ;; upcoming items are in the next 10 days
@@ -274,122 +284,7 @@ emacs --daemon
         ;; create main thread if not already existing
         (push (list "main" line) helios/threads)))))
 
-(defun helios/command/countdown (args)
-  "helios countdown command"
-  (cond
-   ;; disable countdown if arguments are "off" or empty
-   ((or (string= args "") (string= args "off"))
-    (setq helios/countdown '()))
-
-   ;; parse arguments if matching format: date first, separated by . or /, then optional description in brackets
-   ((string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\)\\s-*\\(?:\\[\\(.*?\\)\\]\\)?\\s-*$" args)
-    ;; pull out date, separator, description (defaulting to "")
-    (let* ((date-string (match-string 1 args))
-           (separator (match-string 2 args))
-           (description (or (match-string 3 args) ""))
-           ;; get today's date, parse date string, then calculate number of days between
-           (today (calendar-current-date))
-           (date (helios/parse-date date-string separator))
-           (days-between (- (calendar-absolute-from-gregorian date)
-                            (calendar-absolute-from-gregorian today))))
-      ;; set countdown variable to cons cell of description and number of days between
-      (setq helios/countdown (cons description days-between))))
-
-   ;; invalid syntax - log warning
-   (t
-    (message "[helios|countdown] invalid syntax: %s" args))))
-
-(defun helios/parse-date (date-string separator)
-  "parse date string"
-  ;; split date string by separator and convert to numbers
-  (let* ((parts (mapcar #'string-to-number (split-string date-string (regexp-quote separator))))
-         ;; pull out month and day
-         (month (nth 0 parts))
-         (day (nth 1 parts))
-         ;; pull out year, defaulting to current year if not provided
-         (year (or (nth 2 parts) (nth 2 (calendar-current-date))))
-         ;; reconstruct into date list
-         (date (list month day year))
-         ;; get today's date
-         (today (calendar-current-date)))
-    ;; turn YY year format into YYYY by just adding 2000 and update date list
-    (when (< year 100)
-      (setq year (+ 2000 year))
-      (setq date (list month day year)))
-    ;; check if year was provided
-    (when (< (length parts) 3)
-      ;; offset year to next year if date has already passed
-      (if (< (calendar-absolute-from-gregorian date)
-             (calendar-absolute-from-gregorian today))
-          (setf (nth 2 date) (1+ year))))
-    date))
-
-(defun helios/command/todo (args)
-  "helios todo command"
-  ;; switch conditional cases cascade down
-  (cond
-   ;; [x] indicates marking todo as completed
-   ((string-match "\\(.*?\\)\\s-*\\[x\\]\\s-*$" args)
-    ;; pull out task and set found flag to false
-    (let ((task (match-string 1 args))
-          (found nil))
-      ;; loop over all todos
-      (dolist (item helios/todo)
-        ;; set found flag to true and mark todo as completed when found
-        ;; decrement to keep count of active uncompleted todos
-        (when (string= task (car item))
-          (setq found t)
-          (setcdr item "x")
-          (setq helios/todo/active (- helios/todo/active 1))))
-      ;; log warning if todo was never found
-      (unless found
-        (message "[helios|todo] task not found: %s" task))))
-
-   ;; parse arguments if matching syntax: task first, then optional date in brackets separated by . or /
-   ((string-match "\\(.*?\\)\\s-*\\(?:\\[\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\3[0-9]+\\)?\\)\\]\\)?\\s-*$" args)
-    ;; pull out task, date, and separator
-    (let* ((task (match-string 1 args))
-           (date-string (or (match-string 2 args) ""))
-           (separator (match-string 3 args)))
-      ;; push cons cell of task and date string to todos
-      (push (cons task date-string) helios/todo)
-      ;; keep track of active todos
-      (setq helios/todo/active (+ helios/todo/active 1))))
-
-   ;; catchall indicates no valid syntax was matched
-   ;; invalid syntax - log warning
-   (t
-    (message "[helios|todo] invalid syntax: %s" args))))
-
-(defun helios/command/reminder (args)
-  "helios reminder command"
-  (if (string-match " \\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" args)
-      ;; pull out date, separator, reminder, and then parse date string into list
-      (let* ((date-string (match-string 1 args))
-             (separator (match-string 2 args))
-             (reminder (string-trim (replace-regexp-in-string date-string "" args)))
-             (date (helios/parse-date date-string separator)))
-        ;; push as cons cell into reminders list
-        (push (cons date reminder) helios/reminders))
-    (message "[helios|reminder] invalid syntax: %s" args)))
-
-(defun helios/command/include (args)
-  "helios include command"
-  ;; push include line before including file instead of after
-  (let ((main-thread (assoc "main" helios/threads)))
-    (if main-thread
-        (setcdr main-thread (cons (format "#{include}%s" args) (cdr main-thread)))
-      (push (list "main" (format "#{include}%s" args)) helios/threads)))
-
-  ;; load file if it exists
-  (if (file-exists-p (string-trim args))
-      (helios/load-file (string-trim args) t)
-    (message "[helios|include] file not found: %s" args))
-
-  ;; suppress because line was already pushed
-  (setq helios/parser/suppress t))
-
-(defun helios/load-dashboard ()
+(defun helios/dashboard ()
   "load helios dashboard"
   ;; set left margin to 2/5 of window width
   (setq margin-left (* (/ (window-total-width) 5) 2))
@@ -413,7 +308,7 @@ emacs --daemon
   (setq quote (nth (random (length quotes)) quotes))
 
   ;; get or create helios buffer
-  (with-current-buffer (helios/buffer)
+  (with-current-buffer (get-buffer-create "*helios*")
     ;; inhibit read only in buffer
     (let ((inhibit-read-only t))
       ;; erase buffer and insert headline and random quote
@@ -476,8 +371,8 @@ emacs --daemon
                 (insert (format "• %s [%s]\n" (car todo) (cdr todo)))))))))))
 
   ;; switch to helios buffer and refresh buffer
-  (switch-to-buffer (helios/buffer))
-  (helios/buffer-hook)
+  (switch-to-buffer (get-buffer-create "*helios*"))
+  (helios/buffer/hook)
 
   ;; set fonts
   (setq font-lock-defaults nil)
@@ -500,27 +395,27 @@ emacs --daemon
   (setq-local line-spacing 18)
   (font-lock-mode 1)
 
-  (helios/neutralize-mouse)
+  (helios/utility/neutralize-mouse)
 
   ;; bind threads expansion buffer
   (evil-local-set-key 'normal (kbd "1")
                       `(lambda ()
                          (interactive)
-                         (funcall 'helios/spawn-buffer "threads" #'helios/threads-content)))
+                         (funcall 'helios/buffer/spawn "threads" #'helios/threads/content)))
   ;; bind todo expansion buffer
   (evil-local-set-key 'normal (kbd "2")
                       `(lambda ()
                          (interactive)
-                         (funcall 'helios/spawn-buffer "todo" #'helios/todo-content)))
+                         (funcall 'helios/buffer/spawn "todo" #'helios/todo/content)))
   ;; bind recall expansion buffer to both @ and 3
   (evil-local-set-key 'normal (kbd "3")
                       `(lambda ()
                          (interactive)
-                         (funcall 'helios/spawn-buffer "recall" #'helios/recall-content)))
+                         (funcall 'helios/buffer/spawn "recall" #'helios/recall/content)))
   (evil-local-set-key 'normal (kbd "@")
                       `(lambda ()
                          (interactive)
-                         (funcall 'helios/spawn-buffer "recall" #'helios/recall-content)))
+                         (funcall 'helios/buffer/spawn "recall" #'helios/recall/content)))
 
   ;; set margins, enable line wrapping, set read only and go to origin point
   (set-window-margins (selected-window) margin-left 8)
@@ -529,93 +424,101 @@ emacs --daemon
   (goto-char (point-min))
 
   ;; hook into buffer list update
-  (add-hook 'buffer-list-update-hook #'helios/buffer-hook))
+  (add-hook 'buffer-list-update-hook #'helios/buffer/hook))
 
-(defun helios/buffer ()
-  "get or create helios buffer"
-  (get-buffer-create "*helios*"))
+;;; COMMANDS
+(defun helios/command/countdown (args)
+  "helios countdown command"
+  (cond
+   ;; disable countdown if arguments are "off" or empty
+   ((or (string= args "") (string= args "off"))
+    (setq helios/countdown '()))
 
-(defun helios/buffer-hook ()
-  "helios buffer hook"
-  ;; check when current buffer is helios dashboard and use header/mode lines as top/bottom padding
-  (when (string-equal (buffer-name) "*helios*")
-    ;; empty header line, set background color to match background and jack up height
-    (setq-local header-line-format '(" "))
-    (custom-set-faces
-     '(header-line ((t (:background "#18131B" :foreground "#18131B"))))
-     '(header-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
-    (face-remap-add-relative 'header-line '((:height 1300)))
-    ;; empty mode line, set background color to match background and jack up height
-    (setq-local mode-line-format '(" "))
-    (custom-set-faces
-     '(mode-line ((t (:background "#18131B" :foreground "#18131B"))))
-     '(mode-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
-    (face-remap-add-relative 'mode-line '((:height 1300))))
+   ;; parse arguments if matching format: date first, separated by . or /, then optional description in brackets
+   ((string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\)\\s-*\\(?:\\[\\(.*?\\)\\]\\)?\\s-*$" args)
+    ;; pull out date, separator, description (defaulting to "")
+    (let* ((date-string (match-string 1 args))
+           (separator (match-string 2 args))
+           (description (or (match-string 3 args) ""))
+           ;; get today's date, parse date string, then calculate number of days between
+           (today (calendar-current-date))
+           (date (helios/utility/parse-date date-string separator))
+           (days-between (- (calendar-absolute-from-gregorian date)
+                            (calendar-absolute-from-gregorian today))))
+      ;; set countdown variable to cons cell of description and number of days between
+      (setq helios/countdown (cons description days-between))))
 
-  ;; reset mode/header lines if current buffer isn't helios dashboard
-  (unless (string-equal (buffer-name) "*helios*")
-    (custom-set-faces
-     '(mode-line ((t (:inherit mode-line))))
-     '(mode-line-inactive ((t (:inherit mode-line-inactive))))
-     '(header-line ((t nil)))))
+   ;; invalid syntax - log warning
+   (t
+    (message "[helios|countdown] invalid syntax: %s" args))))
 
-  ;; enable helios minor mode in all helios buffers
-  (if (string-match "^\*helios" (buffer-name))
-      (helios-mode 1)
-    (helios-mode -1)))
+(defun helios/command/todo (args)
+  "helios todo command"
+  ;; switch conditional cases cascade down
+  (cond
+   ;; [x] indicates marking todo as completed
+   ((string-match "\\(.*?\\)\\s-*\\[x\\]\\s-*$" args)
+    ;; pull out task and set found flag to false
+    (let ((task (match-string 1 args))
+          (found nil))
+      ;; loop over all todos
+      (dolist (item helios/todo)
+        ;; set found flag to true and mark todo as completed when found
+        ;; decrement to keep count of active uncompleted todos
+        (when (string= task (car item))
+          (setq found t)
+          (setcdr item "x")
+          (setq helios/todo/active (- helios/todo/active 1))))
+      ;; log warning if todo was never found
+      (unless found
+        (message "[helios|todo] task not found: %s" task))))
 
-(defun helios/neutralize-mouse ()
-  "neutralize mouse"
-  (define-key evil-motion-state-local-map [down-mouse-1] #'ignore)
-  (define-key evil-motion-state-local-map [mouse-1] #'ignore)
-  (define-key evil-motion-state-local-map [drag-mouse-1] #'ignore)
-  (define-key evil-motion-state-local-map [double-mouse-1] #'ignore)
-  (define-key evil-motion-state-local-map [triple-mouse-1] #'ignore)
-  (define-key evil-motion-state-local-map [mouse-2] #'ignore)
-  (define-key evil-motion-state-local-map [mouse-3] #'ignore)
-  (define-key evil-motion-state-local-map [wheel-up] #'ignore)
-  (define-key evil-motion-state-local-map [wheel-down] #'ignore))
+   ;; parse arguments if matching syntax: task first, then optional date in brackets separated by . or /
+   ((string-match "\\(.*?\\)\\s-*\\(?:\\[\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\3[0-9]+\\)?\\)\\]\\)?\\s-*$" args)
+    ;; pull out task, date, and separator
+    (let* ((task (match-string 1 args))
+           (date-string (or (match-string 2 args) ""))
+           (separator (match-string 3 args)))
+      ;; push cons cell of task and date string to todos
+      (push (cons task date-string) helios/todo)
+      ;; keep track of active todos
+      (setq helios/todo/active (+ helios/todo/active 1))))
 
-(defun helios/generate-thread-keys ()
-  "find unique keys for threads"
-  ;; use a hash table for efficiency
-  (let ((used-letters (make-hash-table))
-        result)
-    ;; loop in reverse to maintain stability because threads are from most recent first
-    (dolist (thread (reverse helios/threads))
-      ;; loop over chracters to find when they are a letter and not already used
-      ;; or if no options are available, pick the first available letter in alphabet
-      (let* ((name (car thread))
-             (unique-letter (or (cl-loop for char across name
-                                         when (and (cl-position char "abcdefghijklmnopqrstuvwxyz")
-                                                   (not (gethash (downcase char) used-letters)))
-                                         return (downcase char))
-                                (cl-loop for char across "abcdefghijklmnopqrstuvwxyz"
-                                         unless (gethash char used-letters)
-                                         return char))))
-        ;; update hash table and results list
-        (when unique-letter
-          (puthash unique-letter t used-letters)
-          ;; convert from char to string
-          (push (cons name (string unique-letter)) result))))
-    (setq helios/threadkeys result)))
+   ;; catchall indicates no valid syntax was matched
+   ;; invalid syntax - log warning
+   (t
+    (message "[helios|todo] invalid syntax: %s" args))))
 
-(defun helios/generate-thread-binds ()
-  "generate keybinds for helios threads"
-  ;; loop over threadkeys
-  (dolist (pair helios/threadkeys)
-    ;; get name and unique letter of thread
-    ;; and then get the thread itself
-    (let* ((name (car pair))
-           (letter (cdr pair))
-           (thread (assoc name helios/threads)))
-      ;; bind the letter key to a lambda function that spawns the thread buffer
-      (evil-local-set-key 'normal (kbd letter)
-                          `(lambda ()
-                             (interactive)
-                             (helios/spawn-buffer (car ',thread) #'helios/thread-content ',thread))))))
+(defun helios/command/reminder (args)
+  "helios reminder command"
+  (if (string-match " \\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" args)
+      ;; pull out date, separator, reminder, and then parse date string into list
+      (let* ((date-string (match-string 1 args))
+             (separator (match-string 2 args))
+             (reminder (string-trim (replace-regexp-in-string date-string "" args)))
+             (date (helios/utility/parse-date date-string separator)))
+        ;; push as cons cell into reminders list
+        (push (cons date reminder) helios/reminders))
+    (message "[helios|reminder] invalid syntax: %s" args)))
 
-(defun helios/spawn-buffer (buffer-name content-function &optional args)
+(defun helios/command/include (args)
+  "helios include command"
+  ;; push include line before including file instead of after
+  (let ((main-thread (assoc "main" helios/threads)))
+    (if main-thread
+        (setcdr main-thread (cons (format "#{include}%s" args) (cdr main-thread)))
+      (push (list "main" (format "#{include}%s" args)) helios/threads)))
+
+  ;; load file if it exists
+  (if (file-exists-p (string-trim args))
+      (helios/load-file (string-trim args) t)
+    (message "[helios|include] file not found: %s" args))
+
+  ;; suppress because line was already pushed
+  (setq helios/parser/suppress t))
+
+;;; BUFFERS
+(defun helios/buffer/spawn (buffer-name content-function &optional args)
   "spawn a helios buffer with variable contents"
   (with-current-buffer (get-buffer-create (format "*helios/%s*" buffer-name))
     ;; inhibit read only
@@ -667,7 +570,37 @@ emacs --daemon
       ;; press q to return to dashboard
       (evil-local-set-key 'normal (kbd "q") 'helios))))
 
-(defun helios/thread-content (thread)
+(defun helios/buffer/hook ()
+  "helios buffer hook"
+  ;; check when current buffer is helios dashboard and use header/mode lines as top/bottom padding
+  (when (string-equal (buffer-name) "*helios*")
+    ;; empty header line, set background color to match background and jack up height
+    (setq-local header-line-format '(" "))
+    (custom-set-faces
+     '(header-line ((t (:background "#18131B" :foreground "#18131B"))))
+     '(header-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
+    (face-remap-add-relative 'header-line '((:height 1300)))
+    ;; empty mode line, set background color to match background and jack up height
+    (setq-local mode-line-format '(" "))
+    (custom-set-faces
+     '(mode-line ((t (:background "#18131B" :foreground "#18131B"))))
+     '(mode-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
+    (face-remap-add-relative 'mode-line '((:height 1300))))
+
+  ;; reset mode/header lines if current buffer isn't helios dashboard
+  (unless (string-equal (buffer-name) "*helios*")
+    (custom-set-faces
+     '(mode-line ((t (:inherit mode-line))))
+     '(mode-line-inactive ((t (:inherit mode-line-inactive))))
+     '(header-line ((t nil)))))
+
+  ;; enable helios minor mode in all helios buffers
+  (if (string-match "^\*helios" (buffer-name))
+      (helios-mode 1)
+    (helios-mode -1)))
+
+;;; THREADS
+(defun helios/thread/content (thread)
   "render content for individual helios thread buffers"
   ;; get name, contents, and make buffer name
   (dolist (element (cdr thread))
@@ -689,7 +622,7 @@ emacs --daemon
       ;; pad newline at end
       (insert "\n"))))
 
-(defun helios/threads-content ()
+(defun helios/threads/content ()
   "helios expansion buffer to display all threads"
   (insert (propertize "threads\n" 'font-lock-face 'helios/font/h2))
   ;; loop over threads and insert with keybind letter highlighted
@@ -704,28 +637,49 @@ emacs --daemon
           helios/threadkeys)
   ;; switch to buffer and bind the keys
   (switch-to-buffer (current-buffer))
-  (helios/generate-thread-binds))
+  (helios/threads/binds/map))
 
-(defun helios/todo-content ()
-  "helios expansion buffer to display all todos"
-  (insert (propertize "todo\n" 'font-lock-face 'helios/font/h2))
-  (let ((completed '()))
-    ;; loop over todos and save them for later if they are completed or insert into buffer if not
-    (dolist (todo helios/todo)
-      (if (string= "x" (cdr todo))
-          (push (car todo) completed)
-        (if (string-empty-p (cdr todo))
-            (insert (format "• %s\n" (car todo)))
-          (insert (format "• %s [%s]\n" (car todo) (cdr todo))))))
+(defun helios/threads/binds/generate ()
+  "find unique keys for threads"
+  ;; use a hash table for efficiency
+  (let ((used-letters (make-hash-table))
+        result)
+    ;; loop in reverse to maintain stability because threads are from most recent first
+    (dolist (thread (reverse helios/threads))
+      ;; loop over chracters to find when they are a letter and not already used
+      ;; or if no options are available, pick the first available letter in alphabet
+      (let* ((name (car thread))
+             (unique-letter (or (cl-loop for char across name
+                                         when (and (cl-position char "abcdefghijklmnopqrstuvwxyz")
+                                                   (not (gethash (downcase char) used-letters)))
+                                         return (downcase char))
+                                (cl-loop for char across "abcdefghijklmnopqrstuvwxyz"
+                                         unless (gethash char used-letters)
+                                         return char))))
+        ;; update hash table and results list
+        (when unique-letter
+          (puthash unique-letter t used-letters)
+          ;; convert from char to string
+          (push (cons name (string unique-letter)) result))))
+    (setq helios/threadkeys result)))
 
-    ;; render completed heading if there are completed todos
-    (if (> (length completed) 0)
-        (insert (propertize "\ncompleted\n" 'font-lock-face 'helios/font/h4)))
-    ;; loop and insert the completed todos in, greyed out
-    (dolist (todo completed)
-      (insert (propertize (format "• %s\n" todo) 'font-lock-face 'helios/font/inactive)))))
+(defun helios/threads/binds/map ()
+  "generate keybinds for helios threads"
+  ;; loop over threadkeys
+  (dolist (pair helios/threadkeys)
+    ;; get name and unique letter of thread
+    ;; and then get the thread itself
+    (let* ((name (car pair))
+           (letter (cdr pair))
+           (thread (assoc name helios/threads)))
+      ;; bind the letter key to a lambda function that spawns the thread buffer
+      (evil-local-set-key 'normal (kbd letter)
+                          `(lambda ()
+                             (interactive)
+                             (helios/buffer/spawn (car ',thread) #'helios/thread/content ',thread))))))
 
-(defun helios/recall-content ()
+;;; RECALL
+(defun helios/recall/content ()
   "helios expansion buffer to display all recalls"
   (dolist (entry (assoc "main" helios/threads))
     ;; render only dates of recalls
@@ -735,9 +689,9 @@ emacs --daemon
           (insert "\n"))))
   ;; switch to buffer and bind enter key for selections
   (switch-to-buffer (current-buffer))
-  (evil-local-set-key 'normal (kbd "RET") #'helios/spawn-recall-thread))
+  (evil-local-set-key 'normal (kbd "RET") #'helios/recall/thread/spawn))
 
-(defun helios/spawn-recall-thread ()
+(defun helios/recall/thread/spawn ()
   "spawn thread buffer for individual recall days"
   (interactive)
   ;; get the line the cursor is on and strip newline
@@ -749,9 +703,9 @@ emacs --daemon
         ;; spawn recall thread buffer if it is the right date
         (when (listp entry)
           (if (string-match (concat ".*@" line ".*") (car (last entry)))
-              (helios/spawn-buffer line #'helios/recall-thread-content entry)))))))
+              (helios/buffer/spawn line #'helios/recall/thread/content entry)))))))
 
-(defun helios/recall-thread-content (current)
+(defun helios/recall/thread/content (current)
   "render content for individual recall day thread buffers"
   ;; set a flag to know when the day has ended
   (let ((day-start-flag nil))
@@ -796,15 +750,64 @@ emacs --daemon
     (insert line)
     (insert "\n")))
 
-(defun helios ()
-  "initialize helios"
-  (interactive)
-  (helios/load-file "helios.nyx")
-  (helios/generate-thread-keys)
-  (helios/load-dashboard)
-  (helios/generate-thread-binds))
+;;; TODO
+(defun helios/todo/content ()
+  "helios expansion buffer to display all todos"
+  (insert (propertize "todo\n" 'font-lock-face 'helios/font/h2))
+  (let ((completed '()))
+    ;; loop over todos and save them for later if they are completed or insert into buffer if not
+    (dolist (todo helios/todo)
+      (if (string= "x" (cdr todo))
+          (push (car todo) completed)
+        (if (string-empty-p (cdr todo))
+            (insert (format "• %s\n" (car todo)))
+          (insert (format "• %s [%s]\n" (car todo) (cdr todo))))))
 
-;;; provide helios
+    ;; render completed heading if there are completed todos
+    (if (> (length completed) 0)
+        (insert (propertize "\ncompleted\n" 'font-lock-face 'helios/font/h4)))
+    ;; loop and insert the completed todos in, greyed out
+    (dolist (todo completed)
+      (insert (propertize (format "• %s\n" todo) 'font-lock-face 'helios/font/inactive)))))
+
+;;; UTILITIES
+(defun helios/utility/parse-date (date-string separator)
+  "parse date string"
+  ;; split date string by separator and convert to numbers
+  (let* ((parts (mapcar #'string-to-number (split-string date-string (regexp-quote separator))))
+         ;; pull out month and day
+         (month (nth 0 parts))
+         (day (nth 1 parts))
+         ;; pull out year, defaulting to current year if not provided
+         (year (or (nth 2 parts) (nth 2 (calendar-current-date))))
+         ;; reconstruct into date list
+         (date (list month day year))
+         ;; get today's date
+         (today (calendar-current-date)))
+    ;; turn YY year format into YYYY by just adding 2000 and update date list
+    (when (< year 100)
+      (setq year (+ 2000 year))
+      (setq date (list month day year)))
+    ;; check if year was provided
+    (when (< (length parts) 3)
+      ;; offset year to next year if date has already passed
+      (if (< (calendar-absolute-from-gregorian date)
+             (calendar-absolute-from-gregorian today))
+          (setf (nth 2 date) (1+ year))))
+    date))
+
+(defun helios/utility/neutralize-mouse ()
+  "neutralize mouse"
+  (define-key evil-motion-state-local-map [down-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [drag-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [double-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [triple-mouse-1] #'ignore)
+  (define-key evil-motion-state-local-map [mouse-2] #'ignore)
+  (define-key evil-motion-state-local-map [mouse-3] #'ignore)
+  (define-key evil-motion-state-local-map [wheel-up] #'ignore)
+  (define-key evil-motion-state-local-map [wheel-down] #'ignore))
+
 (provide 'helios)
 #+end_src
 
