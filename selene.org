@@ -31,7 +31,7 @@ emacs --daemon
 
 ** helios
 #+begin_src emacs-lisp :tangle ~/helios.el
-;;; require packages
+;;; PACKAGES
 (require 'calendar)
 
 ;;; MODES
@@ -150,36 +150,8 @@ emacs --daemon
         (helios/parser line)
         (forward-line 1))))
 
-  ;; sort through todos
-  (let ((upcoming '())
-        (urgent '())
-        (others '()))
-    (dolist (todo helios/todo)
-      ;; test if date deadline is set
-      (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\)" (cdr todo))
-          ;; extract separator (. or /) and parse date and calculate days until then
-          (let* ((separator (match-string 2 (cdr todo)))
-                 (date (helios/utility/parse-date (cdr todo) separator))
-                 (days-between (- (calendar-absolute-from-gregorian date)
-                                  (calendar-absolute-from-gregorian (calendar-current-date)))))
-            ;; upcoming items are in the next 10 days
-            (if (< days-between 11)
-                (progn
-                  ;; change the deadline component to the number of days remaining
-                  ;; make sure the grammar matches plural/singular
-                  (if (= days-between 1)
-                      (setcdr todo (format "%d day" days-between))
-                    (setcdr todo (format "%d days" days-between)))
-                  (push todo upcoming))
-              ;; not urgent so don't do anything... yet
-              (push todo others)))
-        ;; also push to urgent if todo contains !
-        ;; otherwise push to others
-        (if (string-match ".*!.*" (car todo))
-            (push todo urgent)
-          (push todo others))))
-    ;; reconstruct todo list with urgent items in front
-    (setq helios/todo (append (nreverse urgent) (nreverse upcoming) (nreverse others)))))
+  ;; sort todos after loading complete
+  (helios/todo/sort))
 
 (defun helios/parser (line)
   "helios parser"
@@ -300,10 +272,11 @@ emacs --daemon
                  "I N V E R T"
                  "lock the fuck in"
                  "garbage in, garbage out"
-                 "day by day but make each count"
+                 "day by day, but make each count"
                  "the only certainty in life is uncertainty"
                  "the time will pass anyways..."
-                 "is this all a dream?"))
+                 "is this all a dream?"
+                 "it's bad enough wasting time without killing it"))
   ;; pick a random quote
   (setq quote (nth (random (length quotes)) quotes))
 
@@ -395,6 +368,7 @@ emacs --daemon
   (setq-local line-spacing 18)
   (font-lock-mode 1)
 
+  ;; neutralize mouse
   (helios/utility/neutralize-mouse)
 
   ;; bind threads expansion buffer
@@ -602,7 +576,6 @@ emacs --daemon
 ;;; THREADS
 (defun helios/thread/content (thread)
   "render content for individual helios thread buffers"
-  ;; get name, contents, and make buffer name
   (dolist (element (cdr thread))
     ;; insert single lines double spaced
     (when (stringp element)
@@ -769,6 +742,38 @@ emacs --daemon
     ;; loop and insert the completed todos in, greyed out
     (dolist (todo completed)
       (insert (propertize (format "• %s\n" todo) 'font-lock-face 'helios/font/inactive)))))
+
+(defun helios/todo/sort ()
+  "sort helios todos"
+  (let ((upcoming '())
+        (urgent '())
+        (others '()))
+    (dolist (todo helios/todo)
+      ;; test if date deadline is set
+      (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\)" (cdr todo))
+          ;; extract separator (. or /) and parse date and calculate days until then
+          (let* ((separator (match-string 2 (cdr todo)))
+                 (date (helios/utility/parse-date (cdr todo) separator))
+                 (days-between (- (calendar-absolute-from-gregorian date)
+                                  (calendar-absolute-from-gregorian (calendar-current-date)))))
+            ;; upcoming items are in the next 10 days
+            (if (< days-between 11)
+                (progn
+                  ;; change the deadline component to the number of days remaining
+                  ;; make sure the grammar matches plural/singular
+                  (if (= days-between 1)
+                      (setcdr todo (format "%d day" days-between))
+                    (setcdr todo (format "%d days" days-between)))
+                  (push todo upcoming))
+              ;; not urgent so don't do anything... yet
+              (push todo others)))
+        ;; also push to urgent if todo contains !
+        ;; otherwise push to others
+        (if (string-match ".*!.*" (car todo))
+            (push todo urgent)
+          (push todo others))))
+    ;; reconstruct todo list with urgent items in front
+    (setq helios/todo (append (nreverse urgent) (nreverse upcoming) (nreverse others)))))
 
 ;;; UTILITIES
 (defun helios/utility/parse-date (date-string separator)
