@@ -114,7 +114,7 @@ emacs --daemon
 (defun helios ()
   "initialize helios"
   (interactive)
-  (helios/load-file "helios.nyx")
+  (helios/load-file "~/helios.nyx")
   (helios/threads/binds/generate)
   (helios/dashboard)
   (helios/threads/binds/map))
