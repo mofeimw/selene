@@ -206,7 +206,7 @@ emacs --daemon
         (push "" helios/parser/chunk-temp))))
 
    ;; parse opening chunk with optional description
-   ((string-match "^~\s*\\([@./'# a-zA-Z0-9]*\\)$" line)
+   ((string-match "^~\s*\\([@./'# a-zA-Z0-9_-]*\\)$" line)
     (setq helios/parser/suppress t)
     ;; extract description
     (let ((description (match-string 1 line)))
