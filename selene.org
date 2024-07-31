@@ -1034,7 +1034,7 @@ change hook
       (setq-local line-spacing 6)
       (visual-line-mode t)
       (set-window-margins (selected-window) 4 4))
-      (advice-add 'basic-save-buffer :after (lambda (_) (selene/on-change))))
+    (advice-add 'basic-save-buffer :after (lambda (_) (selene/on-change))))
 
   ;; hide cursor on splash dash
   (when (eq major-mode '+doom-dashboard-mode)
@@ -1073,9 +1073,17 @@ on buffer list change
 fix issue of small variable-pitch text after new client frame
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
 (add-hook 'server-after-make-frame-hook
-  (lambda ()
-    (setq-local mixed-pitch-set-height t)
-    (set-face-attribute 'variable-pitch nil :height 1.4)))
+          (lambda ()
+            (setq-local mixed-pitch-set-height t)
+            (set-face-attribute 'variable-pitch nil :height 1.4)))
+#+end_src
+
+org mode code block fix parentheses mismatch
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(add-hook 'org-mode-hook
+          (lambda ()
+            (modify-syntax-entry ?< "." org-mode-syntax-table)
+            (modify-syntax-entry ?> "." org-mode-syntax-table)))
 #+end_src
 
 doom dashboard
@@ -1104,8 +1112,8 @@ make org pretty
 (setq org-hide-emphasis-markers t)
 
 (font-lock-add-keywords 'org-mode
-  '(("^ *\\([-]\\) "
-    (0 (prog1 () (compose-region (match-beginning 1) (match-end 1) "•"))))))
+                        '(("^ *\\([-]\\) "
+                           (0 (prog1 () (compose-region (match-beginning 1) (match-end 1) "•"))))))
 #+end_src
 
 mixed-pitch for org
@@ -1113,8 +1121,8 @@ mixed-pitch for org
 (use-package! mixed-pitch
   :hook (org-mode . mixed-pitch-mode)
   :config
-    (setq mixed-pitch-set-height t)
-    (set-face-attribute 'variable-pitch nil :height 1.4))
+  (setq mixed-pitch-set-height t)
+  (set-face-attribute 'variable-pitch nil :height 1.4))
 #+end_src
 
 org-capture
