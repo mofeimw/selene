@@ -153,120 +153,7 @@ emacs --daemon
   ;; sort todos after loading complete
   (helios/todo/sort))
 
-(defun helios/parser (line)
-  "helios parser"
-  ;; don't suppress append by default
-  (setq helios/parser/suppress nil)
-  ;; group chunks together in temporary list
-  (when (and (not (equal line "~")) helios/parser/chunk-open)
-    (setq helios/parser/suppress t)
-    (push line helios/parser/chunk-temp))
-
-  (cond
-   ;; parse comments by ignoring
-   ((string-match "^;;.*$" line) nil)
-
-   ;; parse closing chunk or plain opening chunk
-   ((string-match "^~$" line)
-    (setq helios/parser/suppress t)
-    (if helios/parser/chunk-open
-        ;; closing chunk if flag was open
-        (progn
-          ;; add to main thread
-          (let ((main-thread (assoc "main" helios/threads)))
-            (if main-thread
-                (setcdr main-thread (cons helios/parser/chunk-temp (cdr main-thread)))
-              (push (list "main" helios/parser/chunk-temp) helios/threads)))
-
-          ;; add to recall thread if recall
-          (if helios/parser/recall-date
-              (let ((thread-list (assoc "recall" helios/threads)))
-                (if thread-list
-                    (setcdr thread-list (cons helios/parser/chunk-temp (cdr thread-list)))
-                  (push (list "recall" helios/parser/chunk-temp) helios/threads))))
-
-          ;; add to thread(s) if tagged
-          (dolist (thread helios/parser/chunk-threads)
-            (let ((thread-list (assoc thread helios/threads)))
-              (if thread-list
-                  (setcdr thread-list (cons helios/parser/chunk-temp (cdr thread-list)))
-                (push (list thread helios/parser/chunk-temp) helios/threads))))
-
-          ;; reset for next chunk
-          (setq helios/parser/chunk-open nil)
-          (setq helios/parser/chunk-temp '())
-          (setq helios/parser/chunk-threads '())
-          (setq helios/parser/recall-date nil))
-
-      ;; opening chunk if flag was closed
-      (progn
-        ;; set chunk flag to open
-        (setq helios/parser/chunk-open t)
-        ;; empty description because plain
-        (push "" helios/parser/chunk-temp))))
-
-   ;; parse opening chunk with optional description
-   ((string-match "^~\s*\\([@./'# a-zA-Z0-9_-]*\\)$" line)
-    (setq helios/parser/suppress t)
-    ;; extract description
-    (let ((description (match-string 1 line)))
-      (push description helios/parser/chunk-temp)
-
-      ;; is a daily recall
-      (if (string-match "^@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" description)
-          (setq helios/parser/recall-date (match-string 1 description)))
-
-      ;; extract threads
-      (when (string-match-p "#[a-zA-Z0-9_-]+" line)
-        (let ((start 0))
-          ;; loop through to find all threads
-          (while (string-match "#\\([a-zA-Z0-9_-]+\\)" line start)
-            ;; push and then move flag forward
-            (push (match-string 1 line) helios/parser/chunk-threads)
-            (setq start (match-end 0))))))
-
-    ;; declare open chunk or error if previous chunk was not closed
-    (if helios/parser/chunk-open
-        (message "[helios] invalid syntax: chunk not closed")
-      (setq helios/parser/chunk-open t)))
-
-   ;; parse thread tags
-   ((string-match-p "#[a-zA-Z0-9_-]+" line)
-    (let ((start 0))
-      ;; loop through to find all threads
-      (while (string-match "#\\([a-zA-Z0-9_-]+\\)" line start)
-        ;; pull out name of thread and grab its nested list
-        (let* ((thread (match-string 1 line))
-               (thread-list (assoc thread helios/threads)))
-          ;; append to nested thread list
-          (if thread-list
-              (setcdr thread-list (cons line (cdr thread-list)))
-            ;; or make a new nested list if not already existing
-            (push (list thread line) helios/threads)))
-        ;; move start flag to end of match
-        (setq start (match-end 0)))))
-
-   ;; parse commands
-   ((string-match "^.*#{\\([a-zA-Z0-9_-]+\\)}.*$" line)
-    ;; pull out name of command
-    (let* ((command (match-string 1 line))
-           ;; grab symbol of command function
-           (command-function (intern (concat "helios/command/" command)))
-           ;; remove command tag from line, considering remaining as arguments
-           (args (replace-regexp-in-string "#{.*}" "" line)))
-      ;; check if command function is bound and call with arguments or log warning
-      (if (fboundp command-function)
-          (funcall command-function args)
-        (message "[helios] command not found: %s" command)))))
-
-  ;; append all nonempty lines to main thread, if not suppressed
-  (unless (or (string= line "") helios/parser/suppress)
-    (let ((main-thread (assoc "main" helios/threads)))
-      (if main-thread
-          (setcdr main-thread (cons line (cdr main-thread)))
-        ;; create main thread if not already existing
-        (push (list "main" line) helios/threads)))))
-
+;;; DASHBOARD
 (defun helios/dashboard ()
   "load helios dashboard"
   ;; set left margin to 2/5 of window width
@@ -275,88 +162,27 @@ emacs --daemon
   (when (< (window-total-width) 100)
     (setq margin-left (/ (window-total-width) 3)))
 
-  ;; define quote bank
-  (setq quotes '(
-                 "prime time grind time"
-                 "cook or get cooked"
-                 "pressure makes diamonds"
-                 "I N V E R T"
-                 "lock the fuck in"
-                 "garbage in, garbage out"
-                 "day by day, but make each count"
-                 "the only certainty in life is uncertainty"
-                 "the time will pass anyways..."
-                 "is this all a dream?"
-                 "it's bad enough wasting time without killing it"))
-  ;; pick a random quote
-  (setq quote (nth (random (length quotes)) quotes))
-
   ;; get or create helios buffer
   (with-current-buffer (get-buffer-create "*helios*")
-    ;; inhibit read only in buffer
+    ;; inhibit read only in buffer and render dashboard
     (let ((inhibit-read-only t))
-      ;; erase buffer and insert headline and random quote
       (erase-buffer)
       (insert "H E L I O S\n")
-      (insert (format "\"%s\"\n" quote))
-
-      ;; insert reminders if they fall on today
-      (dolist (reminder helios/reminders)
-        (when (equal (car reminder) (calendar-current-date))
-          (insert (propertize (cdr reminder) 'font-lock-face 'helios/font/reminder))
-          (insert "\n")))
-
-      ;; check that countdown is enabled
-      (when helios/countdown
-        (if (>= (cdr helios/countdown) 0)
-            ;; insert formatted countdown depending on if description is provided
-            (if (string-empty-p (car helios/countdown))
-                (insert (format "<%d days remaining>\n" (cdr helios/countdown)))
-              (insert (format "<%s: %d days remaining>\n" (car helios/countdown) (cdr helios/countdown))))))
-
-      ;; insert heading if there are threads
-      (if (> (length helios/threads) 0)
-          (insert "threads\n"))
-      (let ((count 0))
-        (catch 'break
-          ;; loop over threadkeys list
-          (mapcar (lambda (pair)
-                    ;; break to only show first 4 threads
-                    (when (> count 3)
-                      (throw 'break nil))
-                    ;; insert word formatted to emphasize keybind
-                    ;; split where first occurance of letter is and piece together
-                    (let* ((word (car pair))
-                           (letter (cdr pair))
-                           (match (string-match (regexp-quote letter) word 0)))
-                      (insert (substring word 0 (match-beginning 0)))
-                      (insert (propertize letter 'font-lock-face 'helios/font/emphasis))
-                      (insert (substring word (match-end 0)))
-                      (insert "\n")
-                      (setq count (+ count 1))))
-                  helios/threadkeys))
-
-      ;; insert heading if there are active todos
-      (if (> helios/todo/active 0)
-          (insert "todo\n"))
-      ;; loop over todos
-      (let ((count 0))
-        (catch 'break
-          (dolist (todo helios/todo)
-            ;; break to only show first 4 todos
-            (when (> count 3)
-              (throw 'break nil))
-            ;; insert todo bullet if active
-            (unless (string= "x" (cdr todo))
-              (setq count (+ count 1))
-              ;; format depending on whether deadline is provided
-              (if (string-empty-p (cdr todo))
-                  (insert (format "• %s\n" (car todo)))
-                (insert (format "• %s [%s]\n" (car todo) (cdr todo)))))))))))
+      (helios/dashboard/quote)
+      (helios/dashboard/reminders)
+      (helios/dashboard/countdown)
+      (helios/dashboard/threads)
+      (helios/dashboard/todo)))
 
   ;; switch to helios buffer and refresh buffer
   (switch-to-buffer (get-buffer-create "*helios*"))
   (helios/buffer/hook)
+
+  ;; set margins, enable line wrapping, set read only and go to origin point
+  (set-window-margins (selected-window) margin-left 8)
+  (visual-line-mode t)
+  (read-only-mode 1)
+  (goto-char (point-min))
 
   ;; set fonts
   (setq font-lock-defaults nil)
@@ -402,14 +228,215 @@ emacs --daemon
                          (interactive)
                          (funcall 'helios/buffer/spawn "recall" #'helios/recall/content)))
 
-  ;; set margins, enable line wrapping, set read only and go to origin point
-  (set-window-margins (selected-window) margin-left 8)
-  (visual-line-mode t)
-  (read-only-mode 1)
-  (goto-char (point-min))
-
   ;; hook into buffer list update
   (add-hook 'buffer-list-update-hook #'helios/buffer/hook))
+
+(defun helios/dashboard/quote ()
+  "helios dashboard quote section"
+  (let* ((quotes '(
+                   "prime time grind time"
+                   "cook or get cooked"
+                   "pressure makes diamonds"
+                   "I N V E R T"
+                   "lock the fuck in"
+                   "garbage in, garbage out"
+                   "day by day, but make each count"
+                   "the only certainty in life is uncertainty"
+                   "the time will pass anyways..."
+                   "is this all a dream?"
+                   "it's bad enough wasting time without killing it"))
+         (quote (nth (random (length quotes)) quotes)))
+    (insert (format "\"%s\"\n" quote))))
+
+(defun helios/dashboard/reminders ()
+  "helios dashboard reminders section"
+  ;; loop over reminders and render with annie use your telescope :)
+  (dolist (reminder helios/reminders)
+    (when (equal (car reminder) (calendar-current-date))
+      (insert (propertize (cdr reminder) 'font-lock-face 'helios/font/reminder))
+      (insert "\n"))))
+
+(defun helios/dashboard/countdown ()
+  "helios dashboard countdown section"
+  ;; check if countdown is set and hasn't passed
+  (when helios/countdown
+    (if (>= (cdr helios/countdown) 0)
+        ;; insert formatted countdown depending on if description is provided
+        (if (string-empty-p (car helios/countdown))
+            (insert (format "<%d days remaining>\n" (cdr helios/countdown)))
+          (insert (format "<%s: %d days remaining>\n" (car helios/countdown) (cdr helios/countdown)))))))
+
+(defun helios/dashboard/threads ()
+  "helios dashboard threads section"
+  ;; insert heading if there are threads
+  (if (> (length helios/threads) 0)
+      (insert "threads\n"))
+  (let ((count 0))
+    (catch 'break
+      ;; loop over threadkeys list
+      (mapcar (lambda (pair)
+                ;; break to only show first 4 threads
+                (when (> count 3)
+                  (throw 'break nil))
+                ;; insert word formatted to emphasize keybind
+                ;; split where first occurance of letter is and piece together
+                (let* ((word (car pair))
+                       (letter (cdr pair))
+                       (match (string-match (regexp-quote letter) word 0)))
+                  (insert (substring word 0 (match-beginning 0)))
+                  (insert (propertize letter 'font-lock-face 'helios/font/emphasis))
+                  (insert (substring word (match-end 0)))
+                  (insert "\n")
+                  (setq count (+ count 1))))
+              helios/threadkeys))))
+
+(defun helios/dashboard/todo ()
+  "helios dashboard todo section"
+  ;; insert heading if there are active todos
+  (if (> helios/todo/active 0)
+      (insert "todo\n"))
+  ;; loop over todos
+  (let ((count 0))
+    (catch 'break
+      (dolist (todo helios/todo)
+        ;; break to only show first 4 todos
+        (when (> count 3)
+          (throw 'break nil))
+        ;; insert todo bullet if active
+        (unless (string= "x" (cdr todo))
+          (setq count (+ count 1))
+          ;; format depending on whether deadline is provided
+          (if (string-empty-p (cdr todo))
+              (insert (format "• %s\n" (car todo)))
+            (insert (format "• %s [%s]\n" (car todo) (cdr todo)))))))))
+
+;;; PARSER
+(defun helios/parser (line)
+  "helios parser"
+  ;; don't suppress append by default
+  (setq helios/parser/suppress nil)
+  ;; group chunks together in temporary list
+  (when (and (not (equal line "~")) helios/parser/chunk-open)
+    (setq helios/parser/suppress t)
+    (push line helios/parser/chunk-temp))
+
+  ;; parsing engine
+  (cond
+   ;; comments
+   ((string-match "^;;.*$" line) nil)
+
+   ((string-match "^~$" line)
+    (helios/parser/plain-chunks line))
+
+   ((string-match "^~\s*\\([@./'# a-zA-Z0-9_-]*\\)$" line)
+    (helios/parser/elaborate-chunks line))
+
+   ((string-match-p "#[a-zA-Z0-9_-]+" line)
+    (helios/parser/threads line))
+
+   ((string-match "^.*#{\\([a-zA-Z0-9_-]+\\)}.*$" line)
+    (helios/parser/commands line)))
+
+  ;; append all nonempty lines to main thread, if not suppressed
+  (unless (or (string= line "") helios/parser/suppress)
+    (let ((main-thread (assoc "main" helios/threads)))
+      (if main-thread
+          (setcdr main-thread (cons line (cdr main-thread)))
+        ;; create main thread if not already existing
+        (push (list "main" line) helios/threads)))))
+
+(defun helios/parser/plain-chunks (line)
+  "helios parse plain chunks"
+  (setq helios/parser/suppress t)
+  (if helios/parser/chunk-open
+      ;; closing chunk if flag was open
+      (progn
+        ;; add to main thread
+        (let ((main-thread (assoc "main" helios/threads)))
+          (if main-thread
+              (setcdr main-thread (cons helios/parser/chunk-temp (cdr main-thread)))
+            (push (list "main" helios/parser/chunk-temp) helios/threads)))
+
+        ;; add to recall thread if recall
+        (if helios/parser/recall-date
+            (let ((thread-list (assoc "recall" helios/threads)))
+              (if thread-list
+                  (setcdr thread-list (cons helios/parser/chunk-temp (cdr thread-list)))
+                (push (list "recall" helios/parser/chunk-temp) helios/threads))))
+
+        ;; add to thread(s) if tagged
+        (dolist (thread helios/parser/chunk-threads)
+          (let ((thread-list (assoc thread helios/threads)))
+            (if thread-list
+                (setcdr thread-list (cons helios/parser/chunk-temp (cdr thread-list)))
+              (push (list thread helios/parser/chunk-temp) helios/threads))))
+
+        ;; reset for next chunk
+        (setq helios/parser/chunk-open nil)
+        (setq helios/parser/chunk-temp '())
+        (setq helios/parser/chunk-threads '())
+        (setq helios/parser/recall-date nil))
+
+    ;; opening chunk if flag was closed
+    (progn
+      ;; set chunk flag to open
+      (setq helios/parser/chunk-open t)
+      ;; empty description because plain
+      (push "" helios/parser/chunk-temp))))
+
+(defun helios/parser/elaborate-chunks (line)
+  "helios parse elaborate chunks"
+  (setq helios/parser/suppress t)
+  ;; extract description
+  (let ((description (match-string 1 line)))
+    (push description helios/parser/chunk-temp)
+
+    ;; is a daily recall
+    (if (string-match "^@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" description)
+        (setq helios/parser/recall-date (match-string 1 description)))
+
+    ;; extract threads
+    (when (string-match-p "#[a-zA-Z0-9_-]+" line)
+      (let ((start 0))
+        ;; loop through to find all threads
+        (while (string-match "#\\([a-zA-Z0-9_-]+\\)" line start)
+          ;; push and then move flag forward
+          (push (match-string 1 line) helios/parser/chunk-threads)
+          (setq start (match-end 0))))))
+
+  ;; declare open chunk or error if previous chunk was not closed
+  (if helios/parser/chunk-open
+      (message "[helios] invalid syntax: chunk not closed")
+    (setq helios/parser/chunk-open t)))
+
+(defun helios/parser/threads (line)
+  "helios parse threads"
+  (let ((start 0))
+    ;; loop through to find all threads
+    (while (string-match "#\\([a-zA-Z0-9_-]+\\)" line start)
+      ;; pull out name of thread and grab its nested list
+      (let* ((thread (match-string 1 line))
+             (thread-list (assoc thread helios/threads)))
+        ;; append to nested thread list
+        (if thread-list
+            (setcdr thread-list (cons line (cdr thread-list)))
+          ;; or make a new nested list if not already existing
+          (push (list thread line) helios/threads)))
+      ;; move start flag to end of match
+      (setq start (match-end 0)))))
+
+(defun helios/parser/commands (line)
+  "helios parse commands"
+  ;; pull out name of command
+  (let* ((command (match-string 1 line))
+         ;; grab symbol of command function
+         (command-function (intern (concat "helios/command/" command)))
+         ;; remove command tag from line, considering remaining as arguments
+         (args (replace-regexp-in-string "#{.*}" "" line)))
+    ;; check if command function is bound and call with arguments or log warning
+    (if (fboundp command-function)
+        (funcall command-function args)
+      (message "[helios] command not found: %s" command))))
 
 ;;; COMMANDS
 (defun helios/command/countdown (args)
