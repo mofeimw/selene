@@ -770,12 +770,14 @@ emacs --daemon
     ;; loop through chunks in main
     (dolist (entry main)
       (when (listp entry)
-        ;; reset flag and spawn recall thread of the next day
+        ;; this is the next day, either forward or backward depending on direction
         (when (and
                (string-match "@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" (car (last entry)))
                found)
+          ;; reset flag and spawn recall thread of the next day
           (setq found nil)
-          (helios/buffer/spawn (substring (car (last entry)) 1) #'helios/recall/thread/content entry))
+          ;; use the match string from above for the buffer name
+          (helios/buffer/spawn (match-string 1 (car (last entry))) #'helios/recall/thread/content entry))
         ;; set flag when at the current day
         (when (string-match-p (regexp-quote current-day) (car (last entry)))
           (setq found t))))))
