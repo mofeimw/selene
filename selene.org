@@ -1025,6 +1025,7 @@ misc.
       "! n" #'flycheck-next-error
       "! p" #'flycheck-previous-error
 
+      "+" #'selene/anchor
       "@" #'helios)
 #+end_src
 
@@ -1083,6 +1084,26 @@ run programs in vterm
   (vterm)
   (set-buffer "*vterm*")
   (term-send-raw-string (concat "python3 \"" file-name "\"\n")))
+#+end_src
+
+anchor
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(defvar selene/anchor nil)
+(defvar selene/anchor/highlight nil)
+
+(defun selene/anchor ()
+  (interactive)
+  (if selene/anchor
+      (progn
+        (goto-char selene/anchor)
+        (setq selene/anchor nil)
+        (delete-overlay selene/anchor/highlight)
+        (message "[anchor] returned to line %d" (line-number-at-pos (point))))
+    (progn
+      (setq selene/anchor (point))
+      (setq selene/anchor/highlight (make-overlay (line-beginning-position) (line-end-position)))
+      (overlay-put selene/anchor/highlight 'face '(:background "#1b2a4a"))
+      (message "[anchor] dropped at line %d" (line-number-at-pos selene/anchor)))))
 #+end_src
 
 *** hooks
