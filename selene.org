@@ -91,6 +91,9 @@ emacs --daemon
 (defface helios/font/emphasis
   '((t (:foreground "#b4f9f8")))
   "helios emphasis font")
+(defface helios/font/bold-emphasis
+  '((t (:foreground "#b4f9f8" :weight bold)))
+  "helios bold emphasis font")
 (defface helios/font/inactive
   '((t (:foreground "#8b7694")))
   "helios inactive font")
@@ -554,6 +557,8 @@ emacs --daemon
       (setq helios-thread-font-lock
             '((".*!.*" ; important lines!
                (0 'helios/font/exclamation nil))
+              ("\\*.*\\*" ; bold emphasis
+               (0 'helios/font/bold-emphasis t))
               ("#[[:alnum:]]+" ; thread tags
                (0 'helios/font/thread-highlight t))
               ("#{[[:alnum:]]+}" ; command tags
@@ -747,43 +752,51 @@ emacs --daemon
 
 (defun helios/recall/thread/content (current)
   "render content for individual recall day thread buffers"
-  ;; set a flag to know when the day has ended
-  (let ((day-start-flag nil))
+  (let ((day-start-flag nil)
+        (day-contents '()))
+    ;; loop to get entries from the specified day
     (dolist (entry (assoc "main" helios/threads))
-      ;; render everything from that day
+      ;; on the target day
       (when day-start-flag
         ;; entry is a chunk
         (when (listp entry)
-          ;; a new recall marks another day beginning
-          (when (string-match-p "@" (car (last entry)))
-            (setq day-start-flag nil))
-          ;; check again that the day has not ended
-          (when day-start-flag
-            ;; inside the listp so this must be a chunk
-            ;; render chunk description if applicable
-            (when (not (string-empty-p (car (last entry))))
-              (insert (propertize (car (last entry)) 'font-lock-face 'helios/font/chunk-description))
-              (insert "\n"))
-            ;; insert the chunk contents
-            (dolist (item (reverse (butlast entry)))
-              (insert item)
-              (insert "\n"))
-            ;; padding
-            (insert "\n")))
-
+          ;; a new recall marks end of day
+          (if (string-match-p "@" (car (last entry)))
+              (setq day-start-flag nil)
+            ;; otherwise push entries
+            (push entry day-contents)))
         ;; entry is a string
         (when (stringp entry)
-          ;; simply insert double spaced
-          (insert entry)
-          (insert "\n\n")))
+          (push entry day-contents)))
 
-      ;; set flag when specified date is found
+      ;; find target date
       (when (listp entry)
         (if (equal entry current)
-            (setq day-start-flag t)))))
+            (setq day-start-flag t))))
+
+    ;; render contents of day
+    (dolist (entry day-contents)
+      ;; chunks
+      (when (listp entry)
+        ;; insert chunk description if needed
+        (when (not (string-empty-p (car (last entry))))
+          (insert (propertize (car (last entry)) 'font-lock-face 'helios/font/chunk-description))
+          (insert "\n"))
+        ;; insert chunk contents
+        (dolist (item (reverse (butlast entry)))
+          (insert item)
+          (insert "\n"))
+        ;; insert padding
+        (insert "\n"))
+
+      ;; lines
+      (when (stringp entry)
+        ;; insert double spaced
+        (insert entry)
+        (insert "\n\n"))))
 
   ;; render recall
-  (dolist (line (reverse entry))
+  (dolist (line (reverse current))
     (insert line)
     (insert "\n")))
 
