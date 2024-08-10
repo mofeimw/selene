@@ -116,6 +116,9 @@ emacs --daemon
 
 (defvar helios/todo/active 0)
 
+(defvar helios/calendar/date (calendar-current-date))
+(defvar helios/calendar/period 'month)
+
 ;;; CORE
 (defun helios ()
   "initialize helios"
@@ -142,7 +145,10 @@ emacs --daemon
     (setq helios/parser/recall-date nil)
     (setq helios/parser/suppress nil)
 
-    (setq helios/todo/active 0))
+    (setq helios/todo/active 0)
+
+    (setq helios/calendar/date (calendar-current-date))
+    (setq helios/calendar/period 'month))
 
   ;; insert contents into a temporary buffer
   (with-temp-buffer
@@ -220,13 +226,8 @@ emacs --daemon
                       `(lambda ()
                          (interactive)
                          (funcall 'helios/buffer/spawn "threads" #'helios/threads/view)))
-  ;; bind todo view
+  ;; bind recall view
   (evil-local-set-key 'normal (kbd "2")
-                      `(lambda ()
-                         (interactive)
-                         (funcall 'helios/buffer/spawn "todo" #'helios/todo/view)))
-  ;; bind recall view to both @ and 3
-  (evil-local-set-key 'normal (kbd "3")
                       `(lambda ()
                          (interactive)
                          (funcall 'helios/buffer/spawn "recall" #'helios/recall/view)))
@@ -234,8 +235,17 @@ emacs --daemon
                       `(lambda ()
                          (interactive)
                          (funcall 'helios/buffer/spawn "recall" #'helios/recall/view)))
+  ;; bind todo view
+  (evil-local-set-key 'normal (kbd "3")
+                      `(lambda ()
+                         (interactive)
+                         (funcall 'helios/buffer/spawn "todo" #'helios/todo/view)))
   ;; bind calendar view
   (evil-local-set-key 'normal (kbd "4")
+                      `(lambda ()
+                         (interactive)
+                         (funcall 'helios/buffer/spawn "calendar" #'helios/calendar/view)))
+  (evil-local-set-key 'normal (kbd "?")
                       `(lambda ()
                          (interactive)
                          (funcall 'helios/buffer/spawn "calendar" #'helios/calendar/view)))
@@ -901,24 +911,67 @@ emacs --daemon
 ;;; CALENDAR
 (defun helios/calendar/view ()
   "helios calendar view"
+  (setq helios/calendar/date (calendar-current-date))
   ;; display calendar in gui with svg
   (if (display-graphic-p)
-      (helios/calendar/svg)
+      (helios/calendar/svg #'helios/calendar/svg/month)
     ;; display calendar in tui with ascii
     (helios/calendar/text)))
 
-(defun helios/calendar/svg ()
+(defun helios/calendar/svg (content-function &optional args)
   "render calendar in svg"
+  (let* ((svg)
+         (inhibit-read-only t)
+         (inhibit-message t))
+
+    ;; render svg content using content function
+    ;; call with arguments if passed
+    (if args
+        (setq svg (funcall content-function args))
+      (setq svg (funcall content-function)))
+
+    ;; setup and display svg
+    (erase-buffer)
+    (insert "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+    (svg-print svg)
+    ;; only call image-mode if not already enabled, or else it outlines svg
+    (unless (eq major-mode 'image-mode)
+      (image-mode))
+    (image-transform-set-scale 1)
+    (helios/buffer/hook)
+
+    ;; bind monthly view
+    (evil-local-set-key 'normal (kbd "m")
+                        `(lambda ()
+                           (interactive)
+                           (funcall 'helios/calendar/svg #'helios/calendar/svg/month)))
+    ;; bind weekly view
+    (evil-local-set-key 'normal (kbd "w")
+                        `(lambda ()
+                           (interactive)
+                           (funcall 'helios/calendar/svg #'helios/calendar/svg/week)))
+    ;; enable navigation using arrow keys
+    (evil-local-set-key 'normal (kbd "<")
+                        `(lambda ()
+                           (interactive)
+                           (helios/calendar/navigate)))
+    (evil-local-set-key 'normal (kbd ">")
+                        `(lambda ()
+                           (interactive)
+                           (helios/calendar/navigate t)))))
+
+(defun helios/calendar/svg/month (&optional date-arg)
+  "render helios calendar monthly view"
+  ;; update period to monthly
+  (setq helios/calendar/period 'month)
+  ;; set dimensions and create svg
   (let* ((cell-width 190)
-         (cell-height 140)
-         (svg-width (+ 40 (* 7 cell-width)))
-         (svg-height (+ 150 (* 6 cell-height)))
-         ;; create svg with calculated dimensions plus padding
-         (svg (svg-create svg-width svg-height))
-         ;; get calendar information
-         (today (calendar-current-date))
-         (month (calendar-extract-month today))
-         (year (calendar-extract-year today))
+         (cell-height 160)
+         (svg (svg-create 1500 1000))
+         ;; use default date if no argument was passed
+         (date (if date-arg date-arg helios/calendar/date))
+         (month (calendar-extract-month date))
+         (year (calendar-extract-year date))
          (last-day (calendar-last-day-of-month month year))
          (first-weekday (calendar-day-of-week (list month 1 year)))
          (weeks-in-month (ceiling (/ (+ last-day first-weekday) 7.0))))
@@ -926,10 +979,10 @@ emacs --daemon
     ;; render month and year header
     (svg-text svg
               (format "%s %d" (calendar-month-name month) year)
-              :x (/ svg-width 2)
-              :y 60
+              :x (/ 1400 2)
+              :y 30
               :fill "#b4f9f8"
-              :font-size 25
+              :font-size 30
               :font-weight "bold"
               :text-anchor "middle")
 
@@ -939,17 +992,21 @@ emacs --daemon
         (svg-text svg
                   (nth i day-names)
                   :x (+ (/ cell-width 2) 20 (* i cell-width))
-                  :y 100
+                  :y 60
                   :font-size 18
                   :fill "#bb9af7"
                   :text-anchor "middle")))
+
+    ;; resize cells to make all months fit on screen
+    (if (> weeks-in-month 5)
+        (setq cell-height 135))
 
     ;; render calendar grid
     (dotimes (row weeks-in-month)
       (dotimes (col 7)
         (svg-rectangle svg
                        (+ 20 (* col cell-width))
-                       (+ 120 (* row cell-height))
+                       (+ 70 (* row cell-height))
                        cell-width
                        cell-height
                        :fill "#18131A"
@@ -962,43 +1019,144 @@ emacs --daemon
         ;; make sure day is in bounds of month
         (when (and (>= i first-weekday) (<= day last-day))
           ;; calculate coordinates and format current date as list
-          (let ((x (+ 30 (* (mod i 7) cell-width)))
-                (y (+ 145 (* (/ i 7) cell-height)))
-                (date-list (list month day year)))
-            ;; render number in corner
-            (svg-text svg
-                      (number-to-string day)
-                      :x x
-                      :y y
-                      :font-size 18)
-            ;; increment y-coordinate
+          (let* ((x (+ 25 (* (mod i 7) cell-width)))
+                 (y (+ 90 (* (/ i 7) cell-height)))
+                 (date-list (list month day year))
+                 ;; keep track of starting y-coordinate and also day color
+                 (start-y y)
+                 (day-color "#a9b1d6"))
+
+            ;; allow space for day number in corner
             (setq y (+ 20 y))
 
             ;; loop over all calendar events
-            (dolist (event helios/events)
+            (dolist (event (reverse helios/events))
               ;; check if event falls on current day
               (when (equal date-list (car event))
-                ;; change color if todo
-                (let ((color "#a9b1d6"))
-                  ;; use assoc to check if event is a todo task
-                  (if (assoc (cdr event) helios/todo)
-                      (setq color "#7aa2f7"))
-                  ;; render with wrapped line breaks
-                  ;; keep track of next available y-coordinate after rendering
-                  (setq y (helios/calendar/svg/wrapped-text (cdr event)
-                                                            23 x y 16 color)))
-                ;; pad events slightly
-                (setq y (+ 7 y))))
-            (setq day (1+ day))))))
+                ;; don't overflow cell - see how much space has been used since starting
+                (when (< (- y start-y) 90)
+                  ;; change color if todo
+                  (let ((color "#a9b1d6"))
+                    ;; use assoc to check if event is a todo task
+                    (if (assoc (cdr event) helios/todo)
+                        (setq color "#7aa2f7"))
+                    ;; render with wrapped line breaks
+                    ;; keep track of next available y-coordinate after rendering
+                    (setq y (helios/calendar/svg/wrapped-text (cdr event)
+                                                              23 x y 16 color)))
+                  ;; pad events slightly
+                  (setq y (+ 7 y)))))
 
-    ;; setup and display svg
-    (erase-buffer)
-    (insert "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-    (svg-print svg)
-    (let ((inhibit-message t))
-      (image-mode))
-    (image-transform-set-scale 1)
-    (image-toggle-display-image)))
+            ;; change color of day if overflowed
+            (if (> (- y start-y) 80)
+                (setq day-color "#e0af68"))
+
+            ;; render day number in corner
+            (svg-text svg
+                      (number-to-string day)
+                      :x x
+                      :y start-y
+                      :fill day-color
+                      :font-size 18)
+
+            (setq day (1+ day))))))
+    ;; return svg
+    svg))
+
+(defun helios/calendar/svg/week (&optional date-arg)
+  "render helios calendar weekly view"
+  ;; update period to weekly
+  (setq helios/calendar/period 'week)
+  ;; set dimensions and create svg
+  (let* ((cell-width 190)
+         (cell-height 790)
+         (svg (svg-create 1500 1000))
+         ;; set the date, using either the argument or last date
+         (date (if date-arg date-arg helios/calendar/date))
+         ;; get day of week and calculate week start and end
+         (day-of-week (calendar-day-of-week date))
+         (week-start (calendar-gregorian-from-absolute
+                      (- (calendar-absolute-from-gregorian date)
+                         (mod (- day-of-week calendar-week-start-day) 7))))
+         (week-end (calendar-gregorian-from-absolute
+                    (+ (calendar-absolute-from-gregorian week-start) 6))))
+
+    ;; render week header with month and year
+    (svg-text svg
+              (format "Week of %s %d, %d"
+                      (calendar-month-name (car week-start))
+                      (cadr week-start)
+                      (caddr week-start))
+              :x (/ 1400 2)
+              :y 30
+              :fill "#b4f9f8"
+              :font-size 25
+              :font-weight "bold"
+              :text-anchor "middle")
+
+    ;; render weekday titles
+    (let ((day-names '("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday")))
+      (dotimes (i 7)
+        (svg-text svg
+                  (nth i day-names)
+                  :x (+ (/ cell-width 2) 20 (* i cell-width))
+                  :y 60
+                  :font-size 18
+                  :fill "#bb9af7"
+                  :text-anchor "middle")))
+
+    ;; render week grid and also border for date
+    (dotimes (col 7)
+      (svg-rectangle svg
+                     (+ 20 (* col cell-width))
+                     70
+                     cell-width
+                     cell-height
+                     :fill "#18131A"
+                     :stroke "#a9b1d6")
+      ;; border box at top around date
+      (svg-rectangle svg
+                     (+ 20 (* col cell-width))
+                     70
+                     cell-width
+                     25
+                     :fill "#18131A"
+                     :stroke "#a9b1d6"))
+
+    ;; render days of the week
+    (let ((current-date week-start))
+      ;; loop over each day of week
+      (dotimes (i 7)
+        ;; calculate coordinates and get date as list
+        (let ((x (+ 30 (* i cell-width)))
+              (y 90)
+              (date-list current-date))
+          ;; render month/day centered in box
+          (svg-text svg
+                    (format "%d/%d" (car date-list) (cadr date-list))
+                    :x (+ (/ cell-width 2) (* i cell-width))
+                    :y y
+                    :font-size 18)
+          (setq y (+ 25 y))
+
+          ;; render events of the day
+          (dolist (event helios/events)
+            ;; check if event falls on current day
+            (when (equal date-list (car event))
+              ;; change color if todo by using assoc to search todo cons cells
+              (let ((color "#a9b1d6"))
+                (if (assoc (cdr event) helios/todo)
+                    (setq color "#7aa2f7"))
+                ;; render with wrapped line breaks, updating y-coordinate
+                (setq y (helios/calendar/svg/wrapped-text (cdr event)
+                                                          23 x y 17 color)))
+              (setq y (+ 15 y))))
+
+          ;; move to next day
+          (setq current-date (calendar-gregorian-from-absolute
+                              (+ (calendar-absolute-from-gregorian current-date) 1))))))
+    ;; return svg
+    svg))
 
 (defun helios/calendar/svg/wrapped-text (str limit x y font-size color)
   "render svg text with wrapped line breaks"
@@ -1035,6 +1193,75 @@ emacs --daemon
 (defun helios/calendar/ascii ()
   "render calendar in ascii"
   (insert "calendar"))
+
+(defun helios/calendar/navigate (&optional direction)
+  "navigate in helios calendar"
+  ;; get calendar data and calculate the number of days in the month
+  (let* ((month (calendar-extract-month helios/calendar/date))
+         (day (calendar-extract-day helios/calendar/date))
+         (year (calendar-extract-year helios/calendar/date))
+         (days-in-month (calendar-last-day-of-month month year))
+         ;; calculate next and previous year
+         (prev-year (- year 1))
+         (next-year (+ year 1))
+         ;; month-wise navigation
+         (prev-month (if (= month 1) 12 (- month 1)))
+         (next-month (if (= month 12) 1 (+ month 1)))
+         (prev-month-year (if (= month 1) prev-year year))
+         (next-month-year (if (= month 12) next-year year))
+         ;; week-wise navigation
+         (prev-week-day (- day 7))
+         (next-week-day (+ day 7))
+         (prev-week-month month)
+         (next-week-month month)
+         (prev-week-year year)
+         (next-week-year year)
+         ;; build a new date
+         (new-date '())
+         ;; content-function determines which view to progress to
+         (content-function))
+
+    ;; navigate between months
+    (when (eq helios/calendar/period 'month)
+      ;; create new date in correct direction of navigation
+      (if direction
+          (setq new-date (list next-month 1 next-month-year))
+        (setq new-date (list prev-month 1 prev-month-year)))
+      ;; set svg monthly view as content function
+      (setq content-function #'helios/calendar/svg/month))
+
+    ;; navigate between weeks
+    (when (eq helios/calendar/period 'week)
+      ;; fork flow of time
+      (if direction
+          (progn
+            ;; check overflow
+            (when (> next-week-day days-in-month)
+              ;; rubber-band to next month
+              (setq next-week-day (- next-week-day days-in-month))
+              (setq next-week-month next-month)
+              ;; update year if necessary
+              (setq next-week-year (if (= next-week-month 1) next-year year)))
+            ;; construct new date
+            (setq new-date (list next-week-month next-week-day next-week-year)))
+        (progn
+          ;; check overflow
+          (when (< prev-week-day 1)
+            ;; rubber-band to previous month
+            (setq prev-week-day (+ prev-week-day (calendar-last-day-of-month prev-week-month prev-week-year)))
+            (setq prev-week-month prev-month)
+            ;; update year if necessary
+            (setq prev-week-year (if (= prev-week-month 12) prev-year year)))
+          ;; construct new date
+          (setq new-date (list prev-week-month prev-week-day prev-week-year))))
+      ;; set svg weekly view as content function
+      (setq content-function #'helios/calendar/svg/week))
+
+    ;; update new date
+    (setq helios/calendar/date new-date)
+
+    ;; call svg rendering function with content function and new date
+    (helios/calendar/svg content-function new-date)))
 
 ;;; UTILITIES
 (defun helios/utility/parse-date (date-string separator)
