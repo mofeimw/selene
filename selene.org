@@ -32,7 +32,9 @@ emacs --daemon
 ** helios
 #+begin_src emacs-lisp :tangle ~/helios.el
 ;;; PACKAGES
+(require 'cl-lib)
 (require 'calendar)
+(require 'svg)
 
 ;;; MODES
 (define-derived-mode nyx-mode fundamental-mode "nyx"
@@ -104,6 +106,7 @@ emacs --daemon
 (defvar helios/countdown '())
 (defvar helios/todo '())
 (defvar helios/reminders '())
+(defvar helios/events '())
 
 (defvar helios/parser/chunk-open nil)
 (defvar helios/parser/chunk-threads '())
@@ -131,6 +134,7 @@ emacs --daemon
     (setq helios/countdown '())
     (setq helios/todo '())
     (setq helios/reminders '())
+    (setq helios/events '())
 
     (setq helios/parser/chunk-open nil)
     (setq helios/parser/chunk-threads '())
@@ -211,25 +215,30 @@ emacs --daemon
   ;; neutralize mouse
   (helios/utility/neutralize-mouse)
 
-  ;; bind threads expansion buffer
+  ;; bind threads view
   (evil-local-set-key 'normal (kbd "1")
                       `(lambda ()
                          (interactive)
-                         (funcall 'helios/buffer/spawn "threads" #'helios/threads/content)))
-  ;; bind todo expansion buffer
+                         (funcall 'helios/buffer/spawn "threads" #'helios/threads/view)))
+  ;; bind todo view
   (evil-local-set-key 'normal (kbd "2")
                       `(lambda ()
                          (interactive)
-                         (funcall 'helios/buffer/spawn "todo" #'helios/todo/content)))
-  ;; bind recall expansion buffer to both @ and 3
+                         (funcall 'helios/buffer/spawn "todo" #'helios/todo/view)))
+  ;; bind recall view to both @ and 3
   (evil-local-set-key 'normal (kbd "3")
                       `(lambda ()
                          (interactive)
-                         (funcall 'helios/buffer/spawn "recall" #'helios/recall/content)))
+                         (funcall 'helios/buffer/spawn "recall" #'helios/recall/view)))
   (evil-local-set-key 'normal (kbd "@")
                       `(lambda ()
                          (interactive)
-                         (funcall 'helios/buffer/spawn "recall" #'helios/recall/content)))
+                         (funcall 'helios/buffer/spawn "recall" #'helios/recall/view)))
+  ;; bind calendar view
+  (evil-local-set-key 'normal (kbd "4")
+                      `(lambda ()
+                         (interactive)
+                         (funcall 'helios/buffer/spawn "calendar" #'helios/calendar/view)))
 
   ;; hook into buffer list update
   (add-hook 'buffer-list-update-hook #'helios/buffer/hook))
@@ -486,7 +495,9 @@ emacs --daemon
           (setq helios/todo/active (- helios/todo/active 1))))
       ;; log warning if todo was never found
       (unless found
-        (message "[helios|todo] task not found: %s" task))))
+        (message "[helios|todo] task not found: %s" task))
+      ;; remove from calendar
+      (setq helios/events (delq (rassoc task helios/events) helios/events))))
 
    ;; parse arguments if matching syntax: task first, then optional date in brackets separated by . or /
    ((string-match "\\(.*?\\)\\s-*\\(?:\\[\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\3[0-9]+\\)?\\)\\]\\)?\\s-*$" args)
@@ -496,6 +507,9 @@ emacs --daemon
            (separator (match-string 3 args)))
       ;; push cons cell of task and date string to todos
       (push (cons task date-string) helios/todo)
+      ;; add to calendar if dated and uncompleted
+      (when (not (or (string-empty-p date-string) (string= date-string "x")))
+        (push (cons (helios/utility/parse-date date-string separator) task) helios/events))
       ;; keep track of active todos
       (setq helios/todo/active (+ helios/todo/active 1))))
 
@@ -523,14 +537,24 @@ emacs --daemon
     (if main-thread
         (setcdr main-thread (cons (format "#{include}%s" args) (cdr main-thread)))
       (push (list "main" (format "#{include}%s" args)) helios/threads)))
-
   ;; load file if it exists
   (if (file-exists-p (string-trim args))
       (helios/load-file (string-trim args) t)
     (message "[helios|include] file not found: %s" args))
-
   ;; suppress because line was already pushed
   (setq helios/parser/suppress t))
+
+(defun helios/command/schedule (args)
+  "helios schedule command"
+  (if (string-match " \\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" args)
+      ;; pull out date, separator, event, and then parse date string into list
+      (let* ((date-string (match-string 1 args))
+             (separator (match-string 2 args))
+             (event (string-trim (replace-regexp-in-string date-string "" args)))
+             (date (helios/utility/parse-date date-string separator)))
+        ;; push as cons cell into events list
+        (push (cons date event) helios/events))
+    (message "[helios|schedule] invalid syntax: %s" args)))
 
 ;;; BUFFERS
 (defun helios/buffer/spawn (buffer-name content-function &optional args)
@@ -614,7 +638,7 @@ emacs --daemon
         (evil-local-set-key 'normal (kbd "b")
                             (lambda ()
                               (interactive)
-                              (funcall 'helios/buffer/spawn "recall" #'helios/recall/content)))))))
+                              (funcall 'helios/buffer/spawn "recall" #'helios/recall/view)))))))
 
 (defun helios/buffer/hook ()
   "helios buffer hook"
@@ -667,8 +691,8 @@ emacs --daemon
       ;; pad newline at end
       (insert "\n"))))
 
-(defun helios/threads/content ()
-  "helios expansion buffer to display all threads"
+(defun helios/threads/view ()
+  "helios threads view"
   (insert (propertize "threads\n" 'font-lock-face 'helios/font/h2))
   ;; loop over threads and insert with keybind letter highlighted
   (mapcar (lambda (pair)
@@ -724,8 +748,8 @@ emacs --daemon
                              (helios/buffer/spawn (car ',thread) #'helios/thread/content ',thread))))))
 
 ;;; RECALL
-(defun helios/recall/content ()
-  "helios expansion buffer to display all recalls"
+(defun helios/recall/view ()
+  "helios recall view"
   (dolist (entry (assoc "main" helios/threads))
     ;; render only dates of recalls
     (if (listp entry)
@@ -823,8 +847,8 @@ emacs --daemon
           (setq found t))))))
 
 ;;; TODO
-(defun helios/todo/content ()
-  "helios expansion buffer to display all todos"
+(defun helios/todo/view ()
+  "helios todo view"
   (insert (propertize "todo\n" 'font-lock-face 'helios/font/h2))
   (let ((completed '()))
     ;; loop over todos and save them for later if they are completed or insert into buffer if not
@@ -873,6 +897,144 @@ emacs --daemon
           (push todo others))))
     ;; reconstruct todo list with urgent items in front
     (setq helios/todo (append (nreverse urgent) (nreverse upcoming) (nreverse others)))))
+
+;;; CALENDAR
+(defun helios/calendar/view ()
+  "helios calendar view"
+  ;; display calendar in gui with svg
+  (if (display-graphic-p)
+      (helios/calendar/svg)
+    ;; display calendar in tui with ascii
+    (helios/calendar/text)))
+
+(defun helios/calendar/svg ()
+  "render calendar in svg"
+  (let* ((cell-width 190)
+         (cell-height 140)
+         (svg-width (+ 40 (* 7 cell-width)))
+         (svg-height (+ 150 (* 6 cell-height)))
+         ;; create svg with calculated dimensions plus padding
+         (svg (svg-create svg-width svg-height))
+         ;; get calendar information
+         (today (calendar-current-date))
+         (month (calendar-extract-month today))
+         (year (calendar-extract-year today))
+         (last-day (calendar-last-day-of-month month year))
+         (first-weekday (calendar-day-of-week (list month 1 year)))
+         (weeks-in-month (ceiling (/ (+ last-day first-weekday) 7.0))))
+
+    ;; render month and year header
+    (svg-text svg
+              (format "%s %d" (calendar-month-name month) year)
+              :x (/ svg-width 2)
+              :y 60
+              :fill "#b4f9f8"
+              :font-size 25
+              :font-weight "bold"
+              :text-anchor "middle")
+
+    ;; render weekday titles
+    (let ((day-names '("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday")))
+      (dotimes (i 7)
+        (svg-text svg
+                  (nth i day-names)
+                  :x (+ (/ cell-width 2) 20 (* i cell-width))
+                  :y 100
+                  :font-size 18
+                  :fill "#bb9af7"
+                  :text-anchor "middle")))
+
+    ;; render calendar grid
+    (dotimes (row weeks-in-month)
+      (dotimes (col 7)
+        (svg-rectangle svg
+                       (+ 20 (* col cell-width))
+                       (+ 120 (* row cell-height))
+                       cell-width
+                       cell-height
+                       :fill "#18131A"
+                       :stroke "#a9b1d6")))
+
+    ;; render days of month
+    (let ((day 1))
+      ;; loop over each day of each week
+      (dotimes (i (* 7 weeks-in-month))
+        ;; make sure day is in bounds of month
+        (when (and (>= i first-weekday) (<= day last-day))
+          ;; calculate coordinates and format current date as list
+          (let ((x (+ 30 (* (mod i 7) cell-width)))
+                (y (+ 145 (* (/ i 7) cell-height)))
+                (date-list (list month day year)))
+            ;; render number in corner
+            (svg-text svg
+                      (number-to-string day)
+                      :x x
+                      :y y
+                      :font-size 18)
+            ;; increment y-coordinate
+            (setq y (+ 20 y))
+
+            ;; loop over all calendar events
+            (dolist (event helios/events)
+              ;; check if event falls on current day
+              (when (equal date-list (car event))
+                ;; change color if todo
+                (let ((color "#a9b1d6"))
+                  ;; use assoc to check if event is a todo task
+                  (if (assoc (cdr event) helios/todo)
+                      (setq color "#7aa2f7"))
+                  ;; render with wrapped line breaks
+                  ;; keep track of next available y-coordinate after rendering
+                  (setq y (helios/calendar/svg/wrapped-text (cdr event)
+                                                            23 x y 16 color)))
+                ;; pad events slightly
+                (setq y (+ 7 y))))
+            (setq day (1+ day))))))
+
+    ;; setup and display svg
+    (erase-buffer)
+    (insert "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+    (svg-print svg)
+    (let ((inhibit-message t))
+      (image-mode))
+    (image-transform-set-scale 1)
+    (image-toggle-display-image)))
+
+(defun helios/calendar/svg/wrapped-text (str limit x y font-size color)
+  "render svg text with wrapped line breaks"
+  ;; split words by space, init variables, and keep track of y-coordinate
+  (let ((words (split-string str))
+        (line "")
+        (lines '())
+        (line-y y))
+    (dolist (word words)
+      ;; reset if new word would push over limit
+      (when (>= (+ (length line) (length word)) limit)
+        (push line lines)
+        (setq line ""))
+      ;; append word onto line
+      (setq line (concat line " " word)))
+
+    ;; don't forget stragglers
+    (if (not (string-empty-p line))
+        (push line lines))
+
+    (dolist (line (reverse lines))
+      ;; render line and update y-coordinate
+      (svg-text svg
+                line
+                :x x
+                :y line-y
+                :font-size font-size
+                :fill color)
+      (setq line-y (+ line-y 18)))
+
+    ;; return y-coordinate so other events aren't rendered right on top
+    line-y))
+
+(defun helios/calendar/ascii ()
+  "render calendar in ascii"
+  (insert "calendar"))
 
 ;;; UTILITIES
 (defun helios/utility/parse-date (date-string separator)
