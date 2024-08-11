@@ -923,7 +923,6 @@ emacs --daemon
   (let* ((svg)
          (inhibit-read-only t)
          (inhibit-message t))
-
     ;; render svg content using content function
     ;; call with arguments if passed
     (if args
@@ -967,6 +966,7 @@ emacs --daemon
   ;; set dimensions and create svg
   (let* ((cell-width 190)
          (cell-height 160)
+         (cell-max-lines 5)
          (svg (svg-create 1500 1000))
          ;; use default date if no argument was passed
          (date (if date-arg date-arg helios/calendar/date))
@@ -1018,13 +1018,16 @@ emacs --daemon
       (dotimes (i (* 7 weeks-in-month))
         ;; make sure day is in bounds of month
         (when (and (>= i first-weekday) (<= day last-day))
-          ;; calculate coordinates and format current date as list
+          ;; calculate coordinates and keep track of starting y position
           (let* ((x (+ 25 (* (mod i 7) cell-width)))
                  (y (+ 90 (* (/ i 7) cell-height)))
-                 (date-list (list month day year))
-                 ;; keep track of starting y-coordinate and also day color
                  (start-y y)
-                 (day-color "#a9b1d6"))
+                 ;; keep track of line count to prevent overflow
+                 (line-count 0)
+                 ;; store date as list, corner number font color, and result of wrapping calls
+                 (date-list (list month day year))
+                 (day-color "#a9b1d6")
+                 (result))
 
             ;; allow space for day number in corner
             (setq y (+ 20 y))
@@ -1033,24 +1036,29 @@ emacs --daemon
             (dolist (event (reverse helios/events))
               ;; check if event falls on current day
               (when (equal date-list (car event))
-                ;; don't overflow cell - see how much space has been used since starting
-                (when (< (- y start-y) 90)
+                ;; don't overflow cell
+                (when (< line-count cell-max-lines)
                   ;; change color if todo
                   (let ((color "#a9b1d6"))
                     ;; use assoc to check if event is a todo task
                     (if (assoc (cdr event) helios/todo)
                         (setq color "#7aa2f7"))
                     ;; render with wrapped line breaks
-                    ;; keep track of next available y-coordinate after rendering
-                    (setq y (helios/calendar/svg/wrapped-text (cdr event)
-                                                              23 x y 16 color)))
+                    (setq result (helios/calendar/svg/wrapped-text (cdr event)
+                                                                   ;; pass in allowance of remaining lines
+                                                                   23 (- cell-max-lines line-count)
+                                                                   x y
+                                                                   16 color)))
+                  ;; keep track of next available y-coordinate after rendering
+                  (setq y (car result))
+                  ;; as well as updated line count
+                  (setq line-count (+ line-count (cdr result)))
                   ;; pad events slightly
                   (setq y (+ 7 y)))))
 
-            ;; change color of day if overflowed
-            (if (> (- y start-y) 80)
+            ;; change color of day in corner if overflowed
+            (if (> line-count cell-max-lines)
                 (setq day-color "#e0af68"))
-
             ;; render day number in corner
             (svg-text svg
                       (number-to-string day)
@@ -1059,7 +1067,8 @@ emacs --daemon
                       :fill day-color
                       :font-size 18)
 
-            (setq day (1+ day))))))
+            ;; onto the next day
+            (setq day (+ day 1))))))
     ;; return svg
     svg))
 
@@ -1140,16 +1149,18 @@ emacs --daemon
           (setq y (+ 25 y))
 
           ;; render events of the day
-          (dolist (event helios/events)
+          (dolist (event (reverse helios/events))
             ;; check if event falls on current day
             (when (equal date-list (car event))
               ;; change color if todo by using assoc to search todo cons cells
               (let ((color "#a9b1d6"))
                 (if (assoc (cdr event) helios/todo)
                     (setq color "#7aa2f7"))
-                ;; render with wrapped line breaks, updating y-coordinate
-                (setq y (helios/calendar/svg/wrapped-text (cdr event)
-                                                          23 x y 17 color)))
+                ;; render with wrapped line breaks and update returned y-coordinate, the car component
+                (setq y (car (helios/calendar/svg/wrapped-text (cdr event)
+                                                               23 10
+                                                               x y
+                                                               17 color))))
               (setq y (+ 15 y))))
 
           ;; move to next day
@@ -1158,13 +1169,15 @@ emacs --daemon
     ;; return svg
     svg))
 
-(defun helios/calendar/svg/wrapped-text (str limit x y font-size color)
+(defun helios/calendar/svg/wrapped-text (str limit allowance x y font-size color)
   "render svg text with wrapped line breaks"
-  ;; split words by space, init variables, and keep track of y-coordinate
+  ;; split words by space, init variables, and keep track of y-coordinate and line count
   (let ((words (split-string str))
         (line "")
         (lines '())
-        (line-y y))
+        (line-y y)
+        (line-count 0))
+    ;; go word by word and split by the specified character limit
     (dolist (word words)
       ;; reset if new word would push over limit
       (when (>= (+ (length line) (length word)) limit)
@@ -1173,22 +1186,31 @@ emacs --daemon
       ;; append word onto line
       (setq line (concat line " " word)))
 
-    ;; don't forget stragglers
+    ;; don't forget stragglers that never got pushed
     (if (not (string-empty-p line))
         (push line lines))
 
+    ;; loop through chopped up lines to render
     (dolist (line (reverse lines))
-      ;; render line and update y-coordinate
-      (svg-text svg
-                line
-                :x x
-                :y line-y
-                :font-size font-size
-                :fill color)
-      (setq line-y (+ line-y 18)))
-
-    ;; return y-coordinate so other events aren't rendered right on top
-    line-y))
+      ;; don't exceed line allowance
+      (when (< line-count allowance)
+        ;; add .. at end if cutting off
+        (if (= line-count (- allowance 1))
+            (setq line (concat line "..")))
+        ;; render line
+        (svg-text svg
+                  line
+                  :x x
+                  :y line-y
+                  :font-size font-size
+                  :fill color)
+        ;; update y-coordinate with line height padding
+        (setq line-y (+ line-y 18)))
+      ;; always update line count to relay overflow status
+      (setq line-count (+ line-count 1)))
+    ;; return updated y-coordinate so other events aren't rendered right on top
+    ;; and line count as well in cons cell format
+    (cons line-y line-count)))
 
 (defun helios/calendar/ascii ()
   "render calendar in ascii"
