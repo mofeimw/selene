@@ -1303,12 +1303,7 @@ emacs --daemon
     (when (< year 100)
       (setq year (+ 2000 year))
       (setq date (list month day year)))
-    ;; check if year was provided
-    (when (< (length parts) 3)
-      ;; offset year to next year if date has already passed
-      (if (< (calendar-absolute-from-gregorian date)
-             (calendar-absolute-from-gregorian today))
-          (setf (nth 2 date) (1+ year))))
+    ;; return date parsed as (month day year)
     date))
 
 (defun helios/utility/neutralize-mouse ()
