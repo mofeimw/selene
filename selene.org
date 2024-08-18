@@ -107,6 +107,7 @@ emacs --daemon
 (defvar helios/todo '())
 (defvar helios/reminders '())
 (defvar helios/events '())
+(defvar helios/timeblocks '())
 
 (defvar helios/parser/chunk-open nil)
 (defvar helios/parser/chunk-threads '())
@@ -138,6 +139,7 @@ emacs --daemon
     (setq helios/todo '())
     (setq helios/reminders '())
     (setq helios/events '())
+    (setq helios/timeblocks '())
 
     (setq helios/parser/chunk-open nil)
     (setq helios/parser/chunk-threads '())
@@ -414,7 +416,7 @@ emacs --daemon
     (push description helios/parser/chunk-temp)
 
     ;; is a daily recall
-    (if (string-match "^@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" description)
+    (if (string-match "^@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" description)
         (setq helios/parser/recall-date (match-string 1 description)))
 
     ;; extract threads
@@ -469,14 +471,11 @@ emacs --daemon
     (setq helios/countdown '()))
 
    ;; parse arguments if matching format: date first, separated by . or /, then optional description in brackets
-   ((string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\)\\s-*\\(?:\\[\\(.*?\\)\\]\\)?\\s-*$" args)
-    ;; pull out date, separator, description (defaulting to "")
-    (let* ((date-string (match-string 1 args))
-           (separator (match-string 2 args))
-           (description (or (match-string 3 args) ""))
-           ;; get today's date, parse date string, then calculate number of days between
+   ((string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\)\\s-*\\(?:\\[\\(.*?\\)\\]\\)?" args)
+    ;; extract optional description, parse date string, get today's date, and calculate number of days between
+    (let* ((description (or (match-string 3 args) ""))
+           (date (helios/utility/parse-date args))
            (today (calendar-current-date))
-           (date (helios/utility/parse-date date-string separator))
            (days-between (- (calendar-absolute-from-gregorian date)
                             (calendar-absolute-from-gregorian today))))
       ;; set countdown variable to cons cell of description and number of days between
@@ -484,61 +483,110 @@ emacs --daemon
 
    ;; invalid syntax - log warning
    (t
-    (message "[helios|countdown] invalid syntax: %s" args))))
+    (message "[helios|countdown] invalid syntax:%s" args))))
 
 (defun helios/command/todo (args)
   "helios todo command"
-  ;; switch conditional cases cascade down
-  (cond
-   ;; [x] indicates marking todo as completed
-   ((string-match "\\(.*?\\)\\s-*\\[x\\]\\s-*$" args)
-    ;; pull out task and set found flag to false
-    (let ((task (match-string 1 args))
-          (found nil))
-      ;; loop over all todos
-      (dolist (item helios/todo)
-        ;; set found flag to true and mark todo as completed when found
-        ;; decrement to keep count of active uncompleted todos
-        (when (string= task (car item))
-          (setq found t)
-          (setcdr item "x")
-          (setq helios/todo/active (- helios/todo/active 1))))
-      ;; log warning if todo was never found
-      (unless found
-        (message "[helios|todo] task not found: %s" task))
-      ;; remove from calendar
-      (setq helios/events (delq (rassoc task helios/events) helios/events))))
+  ;; test if arguments contain optional brackets
+  (if (string-match "\\[\\(.*\\)\\]" args)
+      ;; extract bracket contents and consider remains as task
+      (let* ((bracket-contents (match-string 1 args))
+             (task (string-trim (replace-regexp-in-string (format "\\[%s\\]" bracket-contents) "" args))))
+        ;; switch conditional cases cascade down
+        (cond
+         ;; [x] indicates marking todo as completed
+         ((string= bracket-contents "x")
+          ;; set found flag to false
+          (let ((found nil))
+            ;; loop over all todos
+            (dolist (item helios/todo)
+              ;; set found flag to true and mark todo as completed when found
+              ;; decrement to keep count of active uncompleted todos
+              (when (string= task (car item))
+                (setq found t)
+                (setcdr item "x")
+                (setq helios/todo/active (- helios/todo/active 1))))
+            ;; log warning if todo was never found
+            (unless found
+              (message "[helios|todo] task not found: %s" task))
+            ;; remove from calendar
+            (setq helios/events (delq (rassoc task helios/events) helios/events))))
 
-   ;; parse arguments if matching syntax: task first, then optional date in brackets separated by . or /
-   ((string-match "\\(.*?\\)\\s-*\\(?:\\[\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\3[0-9]+\\)?\\)\\]\\)?\\s-*$" args)
-    ;; pull out task, date, and separator
-    (let* ((task (match-string 1 args))
-           (date-string (or (match-string 2 args) ""))
-           (separator (match-string 3 args)))
-      ;; push cons cell of task and date string to todos
-      (push (cons task date-string) helios/todo)
-      ;; add to calendar if dated and uncompleted
-      (when (not (or (string-empty-p date-string) (string= date-string "x")))
-        (push (cons (helios/utility/parse-date date-string separator) task) helios/events))
-      ;; keep track of active todos
-      (setq helios/todo/active (+ helios/todo/active 1))))
+         ;; deadline in the form of date with . or / separators and month, day, year order
+         ((string-match "[0-9]+\\([/.]\\)[0-9]+\\1[0-9]+" bracket-contents)
+          ;; push cons cell of task and date string to todos
+          (push (cons task bracket-contents) helios/todo)
+          ;; add parsed date to calendar
+          (push (cons (helios/utility/parse-date bracket-contents) task) helios/events)
+          ;; keep track of active todos
+          (setq helios/todo/active (+ helios/todo/active 1)))
 
-   ;; catchall indicates no valid syntax was matched
-   ;; invalid syntax - log warning
-   (t
-    (message "[helios|todo] invalid syntax: %s" args))))
+         ;; catchall indicates no valid syntax was matched
+         ;; invalid syntax - log warning
+         (t
+          (message "[helios|todo] invalid syntax:%s" args))))
+
+    ;; with no brackets, simply push task with no deadline
+    (push (cons (string-trim args) "") helios/todo)))
 
 (defun helios/command/reminder (args)
   "helios reminder command"
-  (if (string-match " \\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" args)
-      ;; pull out date, separator, reminder, and then parse date string into list
+  (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" args)
+      ;; extract date string, remainder as reminder, then parse date
       (let* ((date-string (match-string 1 args))
-             (separator (match-string 2 args))
              (reminder (string-trim (replace-regexp-in-string date-string "" args)))
-             (date (helios/utility/parse-date date-string separator)))
+             (date (helios/utility/parse-date args)))
         ;; push as cons cell into reminders list
         (push (cons date reminder) helios/reminders))
-    (message "[helios|reminder] invalid syntax: %s" args)))
+    (message "[helios|reminder] invalid syntax:%s" args)))
+
+(defun helios/command/schedule (args)
+  "helios schedule command"
+  (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" args)
+      ;; extract date string, remainder as event, then parse date
+      (let* ((date-string (match-string 1 args))
+             (event (string-trim (replace-regexp-in-string date-string "" args)))
+             (date (helios/utility/parse-date args)))
+        ;; push as cons cell into events list
+        (push (cons date event) helios/events))
+    (message "[helios|schedule] invalid syntax:%s" args)))
+
+(defun helios/command/timeblock (args)
+  "helios timeblock command"
+  (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\)\\s-\\[.*\\]+" args)
+      ;; extract date, remainder as blocks, then parse date
+      (let* ((date-string (match-string 1 args))
+             (blocks (string-trim (replace-regexp-in-string date-string "" args)))
+             (date (helios/utility/parse-date args))
+             ;; init variables for while loop
+             (timeblocks '())
+             (start 0))
+        ;; loop over every block
+        (while (string-match "\\[\\([0-9]+:[0-9]+\\)\\(?:-\\([0-9]+:[0-9]+\\)\\)?\\s-+\\(.*?\\)\\]" blocks start)
+          ;; extract start time, end time, and event
+          (let* ((start-time-string (match-string 1 blocks))
+                 (end-time-string (match-string 2 blocks))
+                 (start-time '())
+                 (end-time '())
+                 (event (match-string 3 blocks)))
+            ;; update the start position to regex match end for next iteration
+            (setq start (match-end 0))
+            ;; parse time strings afterwards to avoid interfering with match end
+            (setq start-time (helios/utility/parse-time start-time-string))
+            ;; end time is optional
+            (if end-time-string
+                (setq end-time (helios/utility/parse-time end-time-string))
+              (progn
+                ;; deep copy start time
+                (setq end-time (cons (car start-time) (cdr start-time)))
+                (if (<= (car end-time) 24)
+                    ;; default to 1 hour block
+                    (setcar end-time (+ (car end-time) 1)))))
+            ;; push as nested cons cells to temporary gathering list
+            (push (cons (cons start-time end-time) event) timeblocks)))
+        ;; store all blocks consed with date
+        (push (cons date timeblocks) helios/timeblocks))
+    (message "[helios|timeblock] invalid syntax:%s" args)))
 
 (defun helios/command/include (args)
   "helios include command"
@@ -550,21 +598,9 @@ emacs --daemon
   ;; load file if it exists
   (if (file-exists-p (string-trim args))
       (helios/load-file (string-trim args) t)
-    (message "[helios|include] file not found: %s" args))
+    (message "[helios|include] file not found:%s" args))
   ;; suppress because line was already pushed
   (setq helios/parser/suppress t))
-
-(defun helios/command/schedule (args)
-  "helios schedule command"
-  (if (string-match " \\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" args)
-      ;; pull out date, separator, event, and then parse date string into list
-      (let* ((date-string (match-string 1 args))
-             (separator (match-string 2 args))
-             (event (string-trim (replace-regexp-in-string date-string "" args)))
-             (date (helios/utility/parse-date date-string separator)))
-        ;; push as cons cell into events list
-        (push (cons date event) helios/events))
-    (message "[helios|schedule] invalid syntax: %s" args)))
 
 ;;; BUFFERS
 (defun helios/buffer/spawn (buffer-name content-function &optional args)
@@ -603,7 +639,7 @@ emacs --daemon
                (0 'helios/font/inactive t))
               ("@.+" ; daily recall chunk descriptions
                (0 'helios/font/chunk-recall t))
-              ("^\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" ; daily recall dates
+              ("^\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" ; daily recall dates
                (0 'helios/font/chunk-recall t))
               ("\\[.*\\]" ; normal todo items
                (0 'helios/font/emphasis t))
@@ -627,15 +663,15 @@ emacs --daemon
         (evil-local-set-key 'normal (kbd "<")
                             `(lambda ()
                                (interactive)
-                               (when (re-search-forward "@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" nil t)
+                               (when (re-search-forward "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" nil t)
                                  (recenter 0))))
         (evil-local-set-key 'normal (kbd ">")
                             `(lambda ()
                                (interactive)
-                               (when (re-search-backward "@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" nil t)
+                               (when (re-search-backward "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" nil t)
                                  (recenter 0)))))
       ;; in recall threads
-      (when (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" buffer-name)
+      (when (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" buffer-name)
         (evil-local-set-key 'normal (kbd "<")
                             `(lambda ()
                                (interactive)
@@ -763,7 +799,7 @@ emacs --daemon
   (dolist (entry (assoc "main" helios/threads))
     ;; render only dates of recalls
     (if (listp entry)
-        (when (string-match "^@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" (car (last entry)))
+        (when (string-match "^@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" (car (last entry)))
           (insert (match-string 1 (car (last entry))))
           (insert "\n"))))
   ;; switch to buffer and bind enter key for selections
@@ -846,7 +882,7 @@ emacs --daemon
       (when (listp entry)
         ;; this is the next day, either forward or backward depending on direction
         (when (and
-               (string-match "@\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\).*" (car (last entry)))
+               (string-match "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" (car (last entry)))
                found)
           ;; reset flag and spawn recall thread of the next day
           (setq found nil)
@@ -883,10 +919,9 @@ emacs --daemon
         (others '()))
     (dolist (todo helios/todo)
       ;; test if date deadline is set
-      (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\(?:\\2[0-9]+\\)?\\)" (cdr todo))
+      (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\)" (cdr todo))
           ;; extract separator (. or /) and parse date and calculate days until then
-          (let* ((separator (match-string 2 (cdr todo)))
-                 (date (helios/utility/parse-date (cdr todo) separator))
+          (let* ((date (helios/utility/parse-date (cdr todo)))
                  (days-between (- (calendar-absolute-from-gregorian date)
                                   (calendar-absolute-from-gregorian (calendar-current-date)))))
             ;; upcoming items are in the next 10 days
@@ -949,6 +984,11 @@ emacs --daemon
                         `(lambda ()
                            (interactive)
                            (funcall 'helios/calendar/svg #'helios/calendar/svg/week)))
+    ;; bind daily view
+    (evil-local-set-key 'normal (kbd "d")
+                        `(lambda ()
+                           (interactive)
+                           (funcall 'helios/calendar/svg #'helios/calendar/svg/day)))
     ;; enable navigation using arrow keys
     (evil-local-set-key 'normal (kbd "<")
                         `(lambda ()
@@ -997,9 +1037,10 @@ emacs --daemon
                   :fill "#bb9af7"
                   :text-anchor "middle")))
 
-    ;; resize cells to make all months fit on screen
-    (if (> weeks-in-month 5)
-        (setq cell-height 135))
+    ;; resize cells and reduce line count when necessary
+    (when (> weeks-in-month 5)
+      (setq cell-height 135)
+      (setq cell-max-lines 4))
 
     ;; render calendar grid
     (dotimes (row weeks-in-month)
@@ -1169,6 +1210,147 @@ emacs --daemon
     ;; return svg
     svg))
 
+(defun helios/calendar/svg/day (&optional date-arg)
+  "render helios calendar daily view"
+  ;; update period to daily
+  (setq helios/calendar/period 'day)
+  ;; set dimensions and create svg
+  (let* ((cell-width 840)
+         (timeblock-width 500)
+         (cell-height 800)
+         (svg (svg-create 1500 1000))
+         ;; track coordinates
+         (x 40)
+         (y 30)
+         (timeblock-y y)
+         ;; set the date, using either the argument or last date
+         (date (if date-arg date-arg helios/calendar/date))
+         ;; grab date's timeblocks and set variables
+         (blocks (assoc date helios/timeblocks))
+         (sorted-blocks '())
+         (timeblock-fill (if blocks "#211c29" "#18131A")))
+
+    ;; render date header
+    (svg-text svg
+              (format "%d.%d.%d"
+                      (car date)
+                      (cadr date)
+                      (caddr date))
+              :x (/ 1400 2)
+              :y y
+              :fill "#b4f9f8"
+              :font-size 25
+              :font-weight "bold"
+              :text-anchor "middle")
+    (setq y (+ y 20))
+
+    ;; render day events box
+    (svg-rectangle svg
+                   20
+                   y
+                   cell-width
+                   cell-height
+                   :fill "#18131A"
+                   :stroke "#a9b1d6")
+    ;; render timeblock box
+    (svg-rectangle svg
+                   (+ 80 cell-width)
+                   y
+                   timeblock-width
+                   cell-height
+                   ;; fill varies depending on if blocks are defined
+                   :fill timeblock-fill
+                   :stroke "#a9b1d6")
+    ;; save starting y position and update general y-coordinate
+    (setq timeblock-y y)
+    (setq y (+ y 35))
+
+    ;; render events of the day
+    (dolist (event (reverse helios/events))
+      ;; check if event falls on current day
+      (when (equal date (car event))
+        ;; change color if todo by using assoc to search todo cons cells
+        (let ((color "#a9b1d6"))
+          (if (assoc (cdr event) helios/todo)
+              (setq color "#7aa2f7"))
+          ;; render with wrapped line breaks, updating y-coordinate
+          (setq y (car (helios/calendar/svg/wrapped-text (cdr event)
+                                                         90 50
+                                                         x y
+                                                         20 color))))
+        (setq y (+ 15 y))))
+
+    ;; render timeblocks if defined
+    (when blocks
+      ;; sort timeblocks
+      (setq sorted-blocks
+            (sort (cdr blocks)
+                  (lambda (a b)
+                    ;; compare starting times of blocks
+                    (< (caar (car a)) (caar (car b))))))
+
+      ;; calculate start and end of timeblocked day
+      (let* ((day-start (caaar sorted-blocks))
+             (day-end (cdaar (last sorted-blocks)))
+             ;; convert to military time
+             (day-start-military (helios/utility/to-military-time day-start))
+             (day-end-military (helios/utility/to-military-time day-end))
+             ;; calculate the length of time and block unit in allocated rectangle
+             (day-length (- day-end-military day-start-military))
+             ;; block units are used to proportionally size blocks
+             (block-unit (/ (float cell-height) day-length)))
+        ;; loop through blocks
+        (dolist (block sorted-blocks)
+          ;; extract times - start and end - and event
+          (let* ((times (car block))
+                 (start-time (car times))
+                 (end-time (cdr times))
+                 (event (cdr block))
+                 ;; convert to military time
+                 (start-time-military (helios/utility/to-military-time start-time))
+                 (end-time-military (helios/utility/to-military-time end-time))
+                 ;; convert military times to strings
+                 (start-time-military-string (number-to-string start-time-military))
+                 (end-time-military-string (number-to-string end-time-military))
+                 ;; calculate duration of block
+                 (duration (- end-time-military start-time-military)))
+            ;; draw block
+            (svg-rectangle svg
+                           (+ 80 cell-width)
+                           ;; calculate offset from top of box
+                           ;; by finding time elapsed since start of timeblocked day
+                           ;; then use block units to translate into proportional svg units
+                           (+ timeblock-y (* (- start-time-military day-start-military) block-unit))
+                           timeblock-width
+                           ;; calculate relative height of block
+                           (* duration block-unit)
+                           :fill "#18131A"
+                           :stroke "#a9b1d6")
+            ;; draw caption text
+            (svg-text svg
+                      ;; format neatly - extract minutes substring of military time to retain leading 0s
+                      (format "[%d:%s-%d:%s] %s"
+                              (car start-time) (substring start-time-military-string
+                                                          (- (length start-time-military-string) 2)
+                                                          (length start-time-military-string))
+                              (car end-time) (substring end-time-military-string
+                                                        (- (length end-time-military-string) 2)
+                                                        (length end-time-military-string))
+                              event)
+                      ;; center text horizontally
+                      :x (+ 80 cell-width (/ timeblock-width 2))
+                      ;; center text vertically
+                      :y (+ timeblock-y
+                            ;; place in corresponding block
+                            (* (- start-time-military day-start-military) block-unit)
+                            ;; pad to center of block
+                            (* block-unit (/ duration 2))
+                            5)
+                      :font-size 20
+                      :text-anchor "middle")))))
+    ;; return svg
+    svg))
+
 (defun helios/calendar/svg/wrapped-text (str limit allowance x y font-size color)
   "render svg text with wrapped line breaks"
   ;; split words by space, init variables, and keep track of y-coordinate and line count
@@ -1279,6 +1461,21 @@ emacs --daemon
       ;; set svg weekly view as content function
       (setq content-function #'helios/calendar/svg/week))
 
+    ;; navigate between days
+    (when (eq helios/calendar/period 'day)
+      (if direction
+          ;; going forward - rubber-band forward or simply increment day value
+          (if (= day days-in-month)
+              (setq new-date (list next-month 1 next-month-year))
+            (setq new-date (list month (+ day 1) year)))
+        ;; going backward - rubber-band backward or simply decrement day value
+        (if (= day 1)
+            (let ((prev-month-days (calendar-last-day-of-month prev-month prev-month-year)))
+              (setq new-date (list prev-month prev-month-days prev-month-year)))
+          (setq new-date (list month (- day 1) year))))
+      ;; set svg daily view as content function
+      (setq content-function #'helios/calendar/svg/day))
+
     ;; update new date
     (setq helios/calendar/date new-date)
 
@@ -1286,25 +1483,55 @@ emacs --daemon
     (helios/calendar/svg content-function new-date)))
 
 ;;; UTILITIES
-(defun helios/utility/parse-date (date-string separator)
+(defun helios/utility/parse-date (str)
   "parse date string"
-  ;; split date string by separator and convert to numbers
-  (let* ((parts (mapcar #'string-to-number (split-string date-string (regexp-quote separator))))
-         ;; pull out month and day
-         (month (nth 0 parts))
-         (day (nth 1 parts))
-         ;; pull out year, defaulting to current year if not provided
-         (year (or (nth 2 parts) (nth 2 (calendar-current-date))))
-         ;; reconstruct into date list
-         (date (list month day year))
-         ;; get today's date
-         (today (calendar-current-date)))
-    ;; turn YY year format into YYYY by just adding 2000 and update date list
-    (when (< year 100)
-      (setq year (+ 2000 year))
-      (setq date (list month day year)))
-    ;; return date parsed as (month day year)
-    date))
+  (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\)" str)
+      ;; extract date string and separator from regex test
+      (let* ((date-string (match-string 1 str))
+             (separator (match-string 2 str))
+             ;; split date string by separator
+             (parts (mapcar #'string-to-number (split-string date-string (regexp-quote separator))))
+             ;; extract month and day
+             (month (nth 0 parts))
+             (day (nth 1 parts))
+             ;; extract year
+             (year (nth 2 parts))
+             ;; reconstruct into date list
+             (date (list month day year))
+             ;; get today's date
+             (today (calendar-current-date)))
+        ;; turn YY year format into YYYY by just adding 2000 and update date list
+        (when (< year 100)
+          (setq year (+ 2000 year))
+          (setq date (list month day year)))
+        ;; return date parsed as (month day year)
+        date)
+    (message "[helios] invalid date: %s" str)))
+
+(defun helios/utility/parse-time (str)
+  "parse time string"
+  (if (string-match "\\([0-9]+\\):\\([0-9]+\\)" str)
+      ;; extract hour and minute values from regex test and convert to integers
+      (let* ((hour-string (match-string 1 str))
+             (minute-string (match-string 2 str))
+             (hour (string-to-number hour-string))
+             (minute (string-to-number minute-string)))
+        ;; return cons cell if valid time
+        (if (and (<= 0 hour 23) (<= 0 minute 59))
+            (cons hour minute)
+          (message "[helios] invalid time: %s" str)))
+    (message "[helios] invalid time: %s" str)))
+
+(defun helios/utility/to-military-time (time)
+  "convert time to military time"
+  ;; convert hour and minute values to strings
+  (let* ((hour-string (number-to-string (car time)))
+         (minute-string (number-to-string (cdr time))))
+    ;; add leading 0 to minutes if necessary
+    (if (= (length minute-string) 1)
+        (setq minute-string (concat "0" minute-string)))
+    ;; concatenate and convert back to integer
+    (string-to-number (concat hour-string minute-string))))
 
 (defun helios/utility/neutralize-mouse ()
   "neutralize mouse"
