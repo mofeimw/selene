@@ -101,37 +101,28 @@ emacs --daemon
   "helios inactive font")
 
 ;;; VARIABLES
-(defvar helios/threads '())
-(defvar helios/threadkeys '())
-(defvar helios/countdown '())
-(defvar helios/todo '())
-(defvar helios/reminders '())
-(defvar helios/events '())
-(defvar helios/timeblocks '())
-
-(defvar helios/parser/chunk-open nil)
-(defvar helios/parser/chunk-threads '())
-(defvar helios/parser/chunk-temp '())
-(defvar helios/parser/recall-date nil)
-(defvar helios/parser/suppress nil)
-
-(defvar helios/todo/active 0)
-
-(defvar helios/calendar/date (calendar-current-date))
-(defvar helios/calendar/period 'month)
+;; these globals cannot be reset on file reload
+(defvar helios/file "~/helios.nyx")
+(defvar helios/midnight nil)
+(defvar helios/watchdog nil)
+(defvar helios/timers '())
 
 ;;; CORE
 (defun helios ()
-  "initialize helios"
+  "helios"
   (interactive)
-  (helios/load-file "~/helios.nyx")
-  (helios/threads/binds/generate)
-  (helios/dashboard)
-  (helios/threads/binds/map))
+  ;; reload at midnight, but don't spawn duplicate timers
+  (if helios/midnight
+      (progn
+        (helios/load-file)
+        (helios/dashboard))
+    (setq helios/midnight (run-at-time "0:00" t (lambda ()
+                                                  (helios/load-file)
+                                                  (helios/dashboard))))))
 
-(defun helios/load-file (file &optional include)
+(defun helios/load-file (&optional include)
   "load helios.nyx"
-  ;; reset variables unless including
+  ;; init/reset global variables unless including
   (unless include
     (setq helios/threads '())
     (setq helios/threadkeys '())
@@ -140,6 +131,7 @@ emacs --daemon
     (setq helios/reminders '())
     (setq helios/events '())
     (setq helios/timeblocks '())
+    (setq helios/notifications '())
 
     (setq helios/parser/chunk-open nil)
     (setq helios/parser/chunk-threads '())
@@ -154,7 +146,7 @@ emacs --daemon
 
   ;; insert contents into a temporary buffer
   (with-temp-buffer
-    (insert-file-contents file)
+    (insert-file-contents helios/file)
     (goto-char (point-min))
     ;; read line by line
     (while (not (eobp))
@@ -165,8 +157,18 @@ emacs --daemon
         (helios/parser line)
         (forward-line 1))))
 
-  ;; sort todos after loading complete
-  (helios/todo/sort))
+  ;; watch file for changes and reload, but only spawn one watchdog
+  (unless helios/watchdog
+    (setq helios/watchdog (file-notify-add-watch
+                           helios/file
+                           '(change)
+                           (lambda (event)
+                             (helios/load-file)))))
+
+  ;; setup after loading file
+  (helios/todo/sort)
+  (helios/utility/schedule-notifications)
+  (helios/threads/binds/generate))
 
 ;;; DASHBOARD
 (defun helios/dashboard ()
@@ -223,6 +225,9 @@ emacs --daemon
   ;; neutralize mouse
   (helios/utility/neutralize-mouse)
 
+  ;; bind threads
+  (helios/threads/binds/map)
+
   ;; bind threads view
   (evil-local-set-key 'normal (kbd "1")
                       `(lambda ()
@@ -275,10 +280,11 @@ emacs --daemon
 (defun helios/dashboard/reminders ()
   "helios dashboard reminders section"
   ;; loop over reminders and render with annie use your telescope :)
-  (dolist (reminder helios/reminders)
-    (when (equal (car reminder) (calendar-current-date))
-      (insert (propertize (cdr reminder) 'font-lock-face 'helios/font/reminder))
-      (insert "\n"))))
+  (when helios/reminders
+    (dolist (reminder helios/reminders)
+      (when (equal (car reminder) (calendar-current-date))
+        (insert (propertize (cdr reminder) 'font-lock-face 'helios/font/reminder))
+        (insert "\n")))))
 
 (defun helios/dashboard/countdown ()
   "helios dashboard countdown section"
@@ -558,6 +564,8 @@ emacs --daemon
       (let* ((date-string (match-string 1 args))
              (blocks (string-trim (replace-regexp-in-string date-string "" args)))
              (date (helios/utility/parse-date args))
+             ;; get current date
+             (today (calendar-current-date))
              ;; init variables for while loop
              (timeblocks '())
              (start 0))
@@ -571,17 +579,31 @@ emacs --daemon
                  (event (match-string 3 blocks)))
             ;; update the start position to regex match end for next iteration
             (setq start (match-end 0))
+
             ;; parse time strings afterwards to avoid interfering with match end
             (setq start-time (helios/utility/parse-time start-time-string))
             ;; end time is optional
             (if end-time-string
+                ;; parse if given
                 (setq end-time (helios/utility/parse-time end-time-string))
               (progn
                 ;; deep copy start time
                 (setq end-time (cons (car start-time) (cdr start-time)))
                 (if (<= (car end-time) 24)
-                    ;; default to 1 hour block
+                    ;; otherwise default to 1 hour block
                     (setcar end-time (+ (car end-time) 1)))))
+
+            ;; notify today's blocks
+            (when (equal date today)
+              ;; push start and end notifications
+              (push (cons start-time (format "[%s] is starting" event)) helios/notifications)
+              (push (cons end-time (format "[%s] is ending" event)) helios/notifications)
+              ;; calculate 5 and 10 minutes before start and push those notifications
+              (let ((five-before (helios/utility/minutes-before start-time 5))
+                    (ten-before (helios/utility/minutes-before start-time 10)))
+                (push (cons five-before (format "[%s] is starting in 5 minutes" event)) helios/notifications)
+                (push (cons ten-before (format "[%s] is starting in 10 minutes" event)) helios/notifications)))
+
             ;; push as nested cons cells to temporary gathering list
             (push (cons (cons start-time end-time) event) timeblocks)))
         ;; store all blocks consed with date
@@ -1328,14 +1350,10 @@ emacs --daemon
                            :stroke "#a9b1d6")
             ;; draw caption text
             (svg-text svg
-                      ;; format neatly - extract minutes substring of military time to retain leading 0s
-                      (format "[%d:%s-%d:%s] %s"
-                              (car start-time) (substring start-time-military-string
-                                                          (- (length start-time-military-string) 2)
-                                                          (length start-time-military-string))
-                              (car end-time) (substring end-time-military-string
-                                                        (- (length end-time-military-string) 2)
-                                                        (length end-time-military-string))
+                      ;; format neatly - minutes need 2 digits for leading 0s
+                      (format "[%d:%02d-%d:%02d] %s"
+                              (car start-time) (cdr start-time)
+                              (car end-time) (cdr end-time)
                               event)
                       ;; center text horizontally
                       :x (+ 80 cell-width (/ timeblock-width 2))
@@ -1533,6 +1551,15 @@ emacs --daemon
     ;; concatenate and convert back to integer
     (string-to-number (concat hour-string minute-string))))
 
+(defun helios/utility/minutes-before (time n)
+  "calculate time n minutes before"
+  (let ((minutes-before (cons (car time) (- (cdr time) n))))
+    ;; adjust for rubber-banding
+    (when (< (cdr minutes-before) 0)
+      (setcdr minutes-before (+ 60 (cdr minutes-before)))
+      (setcar minutes-before (- (car minutes-before) 1)))
+    minutes-before))
+
 (defun helios/utility/neutralize-mouse ()
   "neutralize mouse"
   (define-key evil-motion-state-local-map [down-mouse-1] #'ignore)
@@ -1544,6 +1571,39 @@ emacs --daemon
   (define-key evil-motion-state-local-map [mouse-3] #'ignore)
   (define-key evil-motion-state-local-map [wheel-up] #'ignore)
   (define-key evil-motion-state-local-map [wheel-down] #'ignore))
+
+(defun helios/utility/schedule-notifications ()
+  "schedule notifications"
+  ;; cancel previously set timers
+  (dolist (timer helios/timers)
+    (cancel-timer timer))
+  (setq helios/timers '())
+
+  ;; get current time
+  (let* ((now (decode-time))
+         (current-time (cons (nth 2 now) (nth 1 now))))
+    ;; loop over queued notifications
+    (dolist (notification helios/notifications)
+      ;; extract time and message components
+      (let ((time (car notification))
+            (message (cdr notification)))
+        ;; only schedule if time has not passed
+        (if (and (>= (car time) (car current-time)) (>= (cdr time) (cdr current-time)))
+            ;; schedule at specified time with no repetition using notify utility
+            ;; store returned timer object
+            (push (run-at-time (format "%d:%02d" (car time) (cdr time)) nil `(lambda () (helios/utility/notify ,message)))
+                  helios/timers))))))
+
+(defun helios/utility/notify (message)
+  "send notification"
+  ;; macos - use applescript
+  (when (eq system-type 'darwin)
+    (start-process
+     "helios-notify" ; process name
+     nil             ; no output buffer
+     "osascript"
+     "-e"
+     (format "display dialog \"%s\" with title \"helios\" buttons {\"ok\"}" message))))
 
 (provide 'helios)
 #+end_src
