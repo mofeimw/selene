@@ -1209,7 +1209,7 @@ emacs --daemon
                     :x (+ (/ cell-width 2) (* i cell-width))
                     :y y
                     :font-size 18)
-          (setq y (+ 25 y))
+          (setq y (+ 30 y))
 
           ;; render events of the day
           (dolist (event (reverse helios/events))
@@ -1237,7 +1237,7 @@ emacs --daemon
   ;; update period to daily
   (setq helios/calendar/period 'day)
   ;; set dimensions and create svg
-  (let* ((cell-width 840)
+  (let* ((cell-width 850)
          (timeblock-width 500)
          (cell-height 800)
          (svg (svg-create 1500 1000))
@@ -1276,7 +1276,7 @@ emacs --daemon
                    :stroke "#a9b1d6")
     ;; render timeblock box
     (svg-rectangle svg
-                   (+ 80 cell-width)
+                   (+ 70 cell-width)
                    y
                    timeblock-width
                    cell-height
@@ -1309,7 +1309,8 @@ emacs --daemon
             (sort (cdr blocks)
                   (lambda (a b)
                     ;; compare starting times of blocks
-                    (< (caar (car a)) (caar (car b))))))
+                    (< (helios/utility/to-military-time (caar a))
+                       (helios/utility/to-military-time (caar b))))))
 
       ;; calculate start and end of timeblocked day
       (let* ((day-start (caaar sorted-blocks))
@@ -1338,7 +1339,7 @@ emacs --daemon
                  (duration (- end-time-military start-time-military)))
             ;; draw block
             (svg-rectangle svg
-                           (+ 80 cell-width)
+                           (+ 70 cell-width)
                            ;; calculate offset from top of box
                            ;; by finding time elapsed since start of timeblocked day
                            ;; then use block units to translate into proportional svg units
@@ -1356,7 +1357,7 @@ emacs --daemon
                               (car end-time) (cdr end-time)
                               event)
                       ;; center text horizontally
-                      :x (+ 80 cell-width (/ timeblock-width 2))
+                      :x (+ 70 cell-width (/ timeblock-width 2))
                       ;; center text vertically
                       :y (+ timeblock-y
                             ;; place in corresponding block
