@@ -555,9 +555,21 @@ emacs --daemon
       ;; extract date string, remainder as event, then parse date
       (let* ((date-string (match-string 1 args))
              (event (string-trim (replace-regexp-in-string date-string "" args)))
-             (date (helios/utility/parse-date args)))
+             (date (helios/utility/parse-date args))
+             ;; get today's date and parse times from event
+             (today (calendar-current-date))
+             (time (helios/utility/parse-time event)))
         ;; push as cons cell into events list
-        (push (cons date event) helios/events))
+        (push (cons date event) helios/events)
+        ;; event is today and contains a time
+        (when (and (equal date today) time)
+          ;; schedule starting notification
+          (push (cons time (format "[%s] is starting" event)) helios/notifications)
+          ;; as well as heads up notifications 5 and 10 minutes before
+          (let ((five-before (helios/utility/minutes-before time 5))
+                (ten-before (helios/utility/minutes-before time 10)))
+            (push (cons five-before (format "[%s] is starting in 5 minutes" event)) helios/notifications)
+            (push (cons ten-before (format "[%s] is starting in 10 minutes" event)) helios/notifications))))
     (message "[helios|schedule] invalid syntax:%s" args)))
 
 (defun helios/command/timeblock (args)
@@ -1219,7 +1231,6 @@ emacs --daemon
 
           ;; render events of the day
           (dolist (event events)
-            ;; check if event falls on current day
             ;; change color if todo by using assoc to search todo cons cells
             (let ((color "#a9b1d6"))
               (if (assoc (cdr event) helios/todo)
