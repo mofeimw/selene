@@ -1641,7 +1641,7 @@ emacs --daemon
       (let ((time (car notification))
             (message (cdr notification)))
         ;; only schedule if time has not passed
-        (if (and (>= (car time) (car current-time)) (>= (cdr time) (cdr current-time)))
+        (if (and (>= (car time) (car current-time)) (> (cdr time) (cdr current-time)))
             ;; schedule at specified time with no repetition using notify utility
             ;; store returned timer object
             (push (run-at-time (format "%d:%02d" (car time) (cdr time)) nil `(lambda () (helios/utility/notify ,message)))
