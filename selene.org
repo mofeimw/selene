@@ -1041,12 +1041,13 @@ emacs --daemon
   ;; update period to monthly
   (setq helios/calendar/period 'month)
   ;; set dimensions and create svg
-  (let* ((cell-width 190)
+  (let* ((cell-width 198)
          (cell-height 160)
          (cell-max-lines 5)
          (svg (svg-create 1500 1000))
          ;; use default date if no argument was passed
          (date (if date-arg date-arg helios/calendar/date))
+         ;; get calendar data and calculate
          (month (calendar-extract-month date))
          (year (calendar-extract-year date))
          (last-day (calendar-last-day-of-month month year))
@@ -1124,7 +1125,7 @@ emacs --daemon
                     ;; render with wrapped line breaks
                     (setq result (helios/calendar/svg/wrapped-text (cdr event)
                                                                    ;; pass in allowance of remaining lines
-                                                                   23 (- cell-max-lines line-count)
+                                                                   24 (- cell-max-lines line-count)
                                                                    x y
                                                                    16 color)))
                   ;; keep track of next available y-coordinate after rendering
@@ -1135,8 +1136,8 @@ emacs --daemon
                   (setq y (+ 7 y)))))
 
             ;; change color of day in corner if overflowed
-            (if (> line-count cell-max-lines)
-                (setq day-color "#e0af68"))
+            (if (>= line-count cell-max-lines)
+                (setq day-color "#b4f9f8"))
             ;; render day number in corner
             (svg-text svg
                       (number-to-string day)
@@ -1155,8 +1156,8 @@ emacs --daemon
   ;; update period to weekly
   (setq helios/calendar/period 'week)
   ;; set dimensions and create svg
-  (let* ((cell-width 190)
-         (cell-height 790)
+  (let* ((cell-width 198)
+         (cell-height 800)
          (svg (svg-create 1500 1000))
          ;; set the date, using either the argument or last date
          (date (if date-arg date-arg helios/calendar/date))
@@ -1181,7 +1182,7 @@ emacs --daemon
               :font-weight "bold"
               :text-anchor "middle")
 
-    ;; render weekday titles
+    ;; render weekday titles, grid, and also border box at top around date
     (let ((day-names '("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday")))
       (dotimes (i 7)
         (svg-text svg
@@ -1190,25 +1191,21 @@ emacs --daemon
                   :y 60
                   :font-size 18
                   :fill "#bb9af7"
-                  :text-anchor "middle")))
-
-    ;; render week grid and also border for date
-    (dotimes (col 7)
-      (svg-rectangle svg
-                     (+ 20 (* col cell-width))
-                     70
-                     cell-width
-                     cell-height
-                     :fill "#18131A"
-                     :stroke "#a9b1d6")
-      ;; border box at top around date
-      (svg-rectangle svg
-                     (+ 20 (* col cell-width))
-                     70
-                     cell-width
-                     25
-                     :fill "#18131A"
-                     :stroke "#a9b1d6"))
+                  :text-anchor "middle")
+        (svg-rectangle svg
+                       (+ 20 (* i cell-width))
+                       70
+                       cell-width
+                       cell-height
+                       :fill "#18131A"
+                       :stroke "#a9b1d6")
+        (svg-rectangle svg
+                       (+ 20 (* i cell-width))
+                       70
+                       cell-width
+                       25
+                       :fill "#18131A"
+                       :stroke "#a9b1d6")))
 
     ;; render days of the week
     (let ((current-date week-start))
@@ -1237,7 +1234,7 @@ emacs --daemon
                   (setq color "#7aa2f7"))
               ;; render with wrapped line breaks and update returned y-coordinate, the car component
               (setq y (car (helios/calendar/svg/wrapped-text (cdr event)
-                                                             23 10
+                                                             24 10
                                                              x y
                                                              17 color))))
             (setq y (+ 15 y)))
@@ -1253,22 +1250,22 @@ emacs --daemon
   ;; update period to daily
   (setq helios/calendar/period 'day)
   ;; set dimensions and create svg
-  (let* ((cell-width 850)
-         (timeblock-width 500)
+  (let* ((cell-width 435)
          (cell-height 800)
          (svg (svg-create 1500 1000))
          ;; track coordinates
-         (x 40)
+         (x 35)
          (y 30)
-         (timeblock-y y)
          ;; set the date, using either the argument or last date
          (date (if date-arg date-arg helios/calendar/date))
          ;; filter out events
          (events (seq-filter (lambda (event) (equal (car event) date)) helios/events))
-         ;; grab date's timeblocks and set variables
+         ;; grab date's timeblocks and init variables
          (blocks (assoc date helios/timeblocks))
          (sorted-blocks '())
-         (timeblock-fill (if blocks "#211c29" "#18131A")))
+         (timeblock-fill (if blocks "#211c29" "#18131A"))
+         (labels '("events" "todo" "timeblocks"))
+         (todos '()))
 
     ;; render date header
     (svg-text svg
@@ -1282,44 +1279,52 @@ emacs --daemon
               :font-size 25
               :font-weight "bold"
               :text-anchor "middle")
-    (setq y (+ y 20))
+    (setq y (+ y 30))
 
-    ;; render day events box
-    (svg-rectangle svg
-                   20
-                   y
-                   cell-width
-                   cell-height
-                   :fill "#18131A"
-                   :stroke "#a9b1d6")
-    ;; render timeblock box
-    (svg-rectangle svg
-                   (+ 70 cell-width)
-                   y
-                   timeblock-width
-                   cell-height
-                   ;; fill varies depending on if blocks are defined
-                   :fill timeblock-fill
-                   :stroke "#a9b1d6")
-    ;; save starting y position and update general y-coordinate
-    (setq timeblock-y y)
-    (setq y (+ y 35))
+    ;; render boxes and their respective labels
+    (dotimes (i 3)
+      (svg-text svg
+                (nth i labels)
+                :x (+ 20 (/ cell-width 2) (* i cell-width) (* i 45))
+                :y y
+                :font-size 19
+                :fill "#bb9af7"
+                :text-anchor "middle")
+      (svg-rectangle svg
+                     (+ 20 (* i cell-width) (* i 45))
+                     (+ y 10)
+                     cell-width
+                     cell-height
+                     :fill (if (= i 2) timeblock-fill "#18131A")
+                     :stroke "#a9b1d6"))
+    (setq y (+ y 40))
 
     ;; order events sorted by time
     (setq events (helios/calendar/order-events events))
 
     ;; render events of the day
-    (dolist (event events)
-      ;; change color if todo by using assoc to search todo cons cells
-      (let ((color "#a9b1d6"))
+    (let ((y y))
+      (dolist (event events)
+        ;; set aside todos
         (if (assoc (cdr event) helios/todo)
-            (setq color "#7aa2f7"))
-        ;; render with wrapped line breaks, updating y-coordinate
-        (setq y (car (helios/calendar/svg/wrapped-text (cdr event)
-                                                       90 50
-                                                       x y
-                                                       20 color))))
-      (setq y (+ 15 y)))
+            (push event todos)
+          ;; render with wrapped line breaks and update local coordinate
+          (progn
+            (setq y (car (helios/calendar/svg/wrapped-text (cdr event)
+                                                           45 50
+                                                           x y
+                                                           20 "#a9b1d6")))
+            (setq y (+ 15 y))))))
+
+    ;; render todos
+    (let ((y y))
+      (dolist (todo todos)
+        ;; render with wrapped line breaks and update local coordinate
+        (setq y (car (helios/calendar/svg/wrapped-text (cdr todo)
+                                                       45 50
+                                                       (+ x cell-width 45) y
+                                                       20 "#a9b1d6")))
+        (setq y (+ 15 y))))
 
     ;; render timeblocks if defined
     (when blocks
@@ -1340,7 +1345,9 @@ emacs --daemon
              ;; calculate the length of time and block unit in allocated rectangle
              (day-length (- day-end-military day-start-military))
              ;; block units are used to proportionally size blocks
-             (block-unit (/ (float cell-height) day-length)))
+             (block-unit (/ (float cell-height) day-length))
+             ;; compensate local y-coordinate
+             (y (- y 30)))
         ;; loop through blocks
         (dolist (block sorted-blocks)
           ;; extract times - start and end - and event
@@ -1358,17 +1365,17 @@ emacs --daemon
                  (duration (- end-time-military start-time-military)))
             ;; draw block
             (svg-rectangle svg
-                           (+ 70 cell-width)
+                           (+ 20 (* 45 2) (* cell-width 2))
                            ;; calculate offset from top of box
                            ;; by finding time elapsed since start of timeblocked day
                            ;; then use block units to translate into proportional svg units
-                           (+ timeblock-y (* (- start-time-military day-start-military) block-unit))
-                           timeblock-width
+                           (+ y (* (- start-time-military day-start-military) block-unit))
+                           cell-width
                            ;; calculate relative height of block
                            (* duration block-unit)
                            :fill "#18131A"
                            :stroke "#a9b1d6")
-            ;; draw caption text
+            ;; draw label text
             (svg-text svg
                       ;; format neatly - minutes need 2 digits for leading 0s
                       (format "[%d:%02d-%d:%02d] %s"
@@ -1376,9 +1383,9 @@ emacs --daemon
                               (car end-time) (cdr end-time)
                               event)
                       ;; center text horizontally
-                      :x (+ 70 cell-width (/ timeblock-width 2))
+                      :x (+ 20 (* 45 2) (* cell-width 2) (/ cell-width 2))
                       ;; center text vertically
-                      :y (+ timeblock-y
+                      :y (+ y
                             ;; place in corresponding block
                             (* (- start-time-military day-start-military) block-unit)
                             ;; pad to center of block
