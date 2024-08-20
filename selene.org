@@ -1847,22 +1847,29 @@ run programs in vterm
 
 anchor
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(defvar selene/anchor nil)
-(defvar selene/anchor/highlight nil)
-
+(defvar selene/anchors '())
 (defun selene/anchor ()
+  "anchors"
   (interactive)
-  (if selene/anchor
-      (progn
-        (goto-char selene/anchor)
-        (setq selene/anchor nil)
-        (delete-overlay selene/anchor/highlight)
-        (message "[anchor] returned to line %d" (line-number-at-pos (point))))
-    (progn
-      (setq selene/anchor (point))
-      (setq selene/anchor/highlight (make-overlay (line-beginning-position) (line-end-position)))
-      (overlay-put selene/anchor/highlight 'face '(:background "#1b2a4a"))
-      (message "[anchor] dropped at line %d" (line-number-at-pos selene/anchor)))))
+  ;; get the prefix key and use it to retrieve anchor
+  ;; nil, which can be an assoc key, if no prefix
+  (let* ((prefix current-prefix-arg)
+         (anchor (assoc prefix selene/anchors)))
+    (if anchor
+        ;; return to anchor
+        (progn
+          (goto-char (cadr anchor))
+          (setq selene/anchors (assq-delete-all prefix selene/anchors))
+          (delete-overlay (cddr anchor)))
+      ;; drop anchor
+      (let ((highlight (make-overlay (line-beginning-position) (line-end-position))))
+        (overlay-put highlight 'face '(:background "#1b2a4a"))
+        (push (cons prefix (cons (point) highlight)) selene/anchors)))
+    ;; log concisely
+    (message "[anchor%s] %s to line %d"
+             (if prefix (format "|%d" prefix) "")
+             (if anchor "returned" "dropped")
+             (line-number-at-pos (point)))))
 #+end_src
 
 *** hooks
