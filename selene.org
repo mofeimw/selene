@@ -126,9 +126,10 @@ emacs --daemon
   (unless include
     (setq helios/threads '())
     (setq helios/threadkeys '())
+    (setq helios/quotes '())
+    (setq helios/reminders '())
     (setq helios/countdown '())
     (setq helios/todo '())
-    (setq helios/reminders '())
     (setq helios/events '())
     (setq helios/timeblocks '())
     (setq helios/notifications '())
@@ -144,31 +145,33 @@ emacs --daemon
     (setq helios/calendar/date (calendar-current-date))
     (setq helios/calendar/period 'month))
 
-  ;; insert contents into a temporary buffer
-  (with-temp-buffer
-    (insert-file-contents helios/file)
-    (goto-char (point-min))
-    ;; read line by line
-    (while (not (eobp))
-      (let ((line (buffer-substring-no-properties
-                   (line-beginning-position)
-                   (line-end-position))))
-        ;; parse each line
-        (helios/parser line)
-        (forward-line 1))))
+  ;; use default file if not including
+  (let ((file (or include helios/file)))
+    ;; insert contents into a temporary buffer
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      ;; read line by line
+      (while (not (eobp))
+        (let ((line (buffer-substring-no-properties
+                     (line-beginning-position)
+                     (line-end-position))))
+          ;; parse each line
+          (helios/parser line)
+          (forward-line 1))))
 
-  ;; watch file for changes and reload, but only spawn one watchdog
-  (unless helios/watchdog
-    (setq helios/watchdog (file-notify-add-watch
-                           helios/file
-                           '(change)
-                           (lambda (event)
-                             (helios/load-file)))))
+    ;; watch file for changes and reload, but only spawn one watchdog
+    (unless helios/watchdog
+      (setq helios/watchdog (file-notify-add-watch
+                             file
+                             '(change)
+                             (lambda (event)
+                               (helios/load-file)))))
 
-  ;; setup after loading file
-  (helios/todo/sort)
-  (helios/utility/schedule-notifications)
-  (helios/threads/binds/generate))
+    ;; setup after loading file
+    (helios/todo/sort)
+    (helios/utility/schedule-notifications)
+    (helios/threads/binds/generate)))
 
 ;;; DASHBOARD
 (defun helios/dashboard ()
@@ -262,20 +265,10 @@ emacs --daemon
 
 (defun helios/dashboard/quote ()
   "helios dashboard quote section"
-  (let* ((quotes '(
-                   "prime time grind time"
-                   "cook or get cooked"
-                   "pressure makes diamonds"
-                   "I N V E R T"
-                   "lock the fuck in"
-                   "garbage in, garbage out"
-                   "day by day, but make each count"
-                   "the only certainty in life is uncertainty"
-                   "the time will pass anyways..."
-                   "is this all a dream?"
-                   "it's bad enough wasting time without killing it"))
-         (quote (nth (random (length quotes)) quotes)))
-    (insert (format "\"%s\"\n" quote))))
+  ;; pick a random quote
+  (when (> (length helios/quotes) 0)
+    (let* ((quote (nth (random (length helios/quotes)) helios/quotes)))
+      (insert (format "\"%s\"\n" quote)))))
 
 (defun helios/dashboard/reminders ()
   "helios dashboard reminders section"
@@ -355,25 +348,23 @@ emacs --daemon
    ;; comments
    ((string-match "^;;.*$" line) nil)
 
+   ;; chunks
    ((string-match "^~$" line)
     (helios/parser/plain-chunks line))
-
    ((string-match "^~\s*\\([@./'# a-zA-Z0-9_-]*\\)$" line)
     (helios/parser/elaborate-chunks line))
 
+   ;; threads
    ((string-match-p "#[a-zA-Z0-9_-]+" line)
     (helios/parser/threads line))
 
+   ;; commands
    ((string-match "^.*#{\\([a-zA-Z0-9_-]+\\)}.*$" line)
     (helios/parser/commands line)))
 
   ;; append all nonempty lines to main thread, if not suppressed
   (unless (or (string= line "") helios/parser/suppress)
-    (let ((main-thread (assoc "main" helios/threads)))
-      (if main-thread
-          (setcdr main-thread (cons line (cdr main-thread)))
-        ;; create main thread if not already existing
-        (push (list "main" line) helios/threads)))))
+    (helios/threads/add "main" line)))
 
 (defun helios/parser/plain-chunks (line)
   "helios parse plain chunks"
@@ -382,24 +373,15 @@ emacs --daemon
       ;; closing chunk if flag was open
       (progn
         ;; add to main thread
-        (let ((main-thread (assoc "main" helios/threads)))
-          (if main-thread
-              (setcdr main-thread (cons helios/parser/chunk-temp (cdr main-thread)))
-            (push (list "main" helios/parser/chunk-temp) helios/threads)))
+        (helios/threads/add "main" helios/parser/chunk-temp)
 
         ;; add to recall thread if recall
         (if helios/parser/recall-date
-            (let ((thread-list (assoc "recall" helios/threads)))
-              (if thread-list
-                  (setcdr thread-list (cons helios/parser/chunk-temp (cdr thread-list)))
-                (push (list "recall" helios/parser/chunk-temp) helios/threads))))
+            (helios/threads/add "recall" helios/parser/chunk-temp))
 
         ;; add to thread(s) if tagged
         (dolist (thread helios/parser/chunk-threads)
-          (let ((thread-list (assoc thread helios/threads)))
-            (if thread-list
-                (setcdr thread-list (cons helios/parser/chunk-temp (cdr thread-list)))
-              (push (list thread helios/parser/chunk-temp) helios/threads))))
+          (helios/threads/add thread helios/parser/chunk-temp))
 
         ;; reset for next chunk
         (setq helios/parser/chunk-open nil)
@@ -444,25 +426,20 @@ emacs --daemon
   (let ((start 0))
     ;; loop through to find all threads
     (while (string-match "#\\([a-zA-Z0-9_-]+\\)" line start)
-      ;; pull out name of thread and grab its nested list
-      (let* ((thread (match-string 1 line))
-             (thread-list (assoc thread helios/threads)))
-        ;; append to nested thread list
-        (if thread-list
-            (setcdr thread-list (cons line (cdr thread-list)))
-          ;; or make a new nested list if not already existing
-          (push (list thread line) helios/threads)))
+      ;; extract name of thread and append to it
+      (let ((thread (match-string 1 line)))
+        (helios/threads/add thread line))
       ;; move start flag to end of match
       (setq start (match-end 0)))))
 
 (defun helios/parser/commands (line)
   "helios parse commands"
-  ;; pull out name of command
+  ;; extract name of command
   (let* ((command (match-string 1 line))
          ;; grab symbol of command function
          (command-function (intern (concat "helios/command/" command)))
-         ;; remove command tag from line, considering remaining as arguments
-         (args (replace-regexp-in-string "#{.*}" "" line)))
+         ;; remove command tag from line and trim, considering remainder as arguments
+         (args (string-trim (replace-regexp-in-string "#{.*}" "" line))))
     ;; check if command function is bound and call with arguments or log warning
     (if (fboundp command-function)
         (funcall command-function args)
@@ -489,7 +466,7 @@ emacs --daemon
 
    ;; invalid syntax - log warning
    (t
-    (message "[helios|countdown] invalid syntax:%s" args))))
+    (message "[helios|countdown] invalid syntax: %s" args))))
 
 (defun helios/command/todo (args)
   "helios todo command"
@@ -530,7 +507,7 @@ emacs --daemon
          ;; catchall indicates no valid syntax was matched
          ;; invalid syntax - log warning
          (t
-          (message "[helios|todo] invalid syntax:%s" args))))
+          (message "[helios|todo] invalid syntax: %s" args))))
 
     ;; with no brackets, simply push task with no deadline
     (progn
@@ -547,7 +524,7 @@ emacs --daemon
              (date (helios/utility/parse-date args)))
         ;; push as cons cell into reminders list
         (push (cons date reminder) helios/reminders))
-    (message "[helios|reminder] invalid syntax:%s" args)))
+    (message "[helios|reminder] invalid syntax: %s" args)))
 
 (defun helios/command/schedule (args)
   "helios schedule command"
@@ -570,7 +547,7 @@ emacs --daemon
                 (ten-before (helios/utility/minutes-before time 10)))
             (push (cons five-before (format "[%s] is starting in 5 minutes" event)) helios/notifications)
             (push (cons ten-before (format "[%s] is starting in 10 minutes" event)) helios/notifications))))
-    (message "[helios|schedule] invalid syntax:%s" args)))
+    (message "[helios|schedule] invalid syntax: %s" args)))
 
 (defun helios/command/timeblock (args)
   "helios timeblock command"
@@ -623,19 +600,21 @@ emacs --daemon
             (push (cons (cons start-time end-time) event) timeblocks)))
         ;; store all blocks consed with date
         (push (cons date timeblocks) helios/timeblocks))
-    (message "[helios|timeblock] invalid syntax:%s" args)))
+    (message "[helios|timeblock] invalid syntax: %s" args)))
+
+(defun helios/command/quote (args)
+  "helios quote command"
+  ;; add to quote bank
+  (push args helios/quotes))
 
 (defun helios/command/include (args)
   "helios include command"
-  ;; push include line before including file instead of after
-  (let ((main-thread (assoc "main" helios/threads)))
-    (if main-thread
-        (setcdr main-thread (cons (format "#{include}%s" args) (cdr main-thread)))
-      (push (list "main" (format "#{include}%s" args)) helios/threads)))
+  ;; add include line before including file instead of after
+  (helios/threads/add "main" (format "#{include} %s" args))
   ;; load file if it exists
-  (if (file-exists-p (string-trim args))
-      (helios/load-file (string-trim args) t)
-    (message "[helios|include] file not found:%s" args))
+  (if (file-exists-p args)
+      (helios/load-file args)
+    (message "[helios|include] file not found: %s" args))
   ;; suppress because line was already pushed
   (setq helios/parser/suppress t))
 
@@ -753,6 +732,16 @@ emacs --daemon
     (helios-mode -1)))
 
 ;;; THREADS
+(defun helios/threads/add (thread-name item)
+  "add to helios thread"
+  ;; get thread list
+  (let ((thread (assoc thread-name helios/threads)))
+    (if thread
+        ;; append to thread if already existing
+        (setcdr thread (cons item (cdr thread)))
+      ;; or create new thread
+      (push (list thread-name item) helios/threads))))
+
 (defun helios/thread/content (thread)
   "render content for individual helios thread buffers"
   (dolist (element (cdr thread))
