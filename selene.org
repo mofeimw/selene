@@ -77,7 +77,7 @@ emacs --daemon
   "helios monospace/code font")
 (defface helios/font/exclamation
   '((t (:foreground "#f7768e")))
-  "helios ! font")
+  "helios exclamation font")
 (defface helios/font/thread-highlight
   '((t (:foreground "#b4f9f8" :weight bold)))
   "helios thread highlight font")
@@ -218,7 +218,7 @@ emacs --daemon
            (0 'helios/font/code t))
           ("^\\<\\(threads\\|todo\\)\\>$"
            (0 'helios/font/h2 t))
-          ("^.*!.*$"
+          ("^.*!!.*$"
            (0 'helios/font/exclamation t))
           ("\\[.*\\]"
            (0 'helios/font/emphasis t))
@@ -667,7 +667,7 @@ emacs --daemon
       ;; set fonts
       (setq font-lock-defaults nil)
       (setq helios-thread-font-lock
-            '((".*!.*" ; important lines!
+            '((".*!!.*" ; important lines!!
                (0 'helios/font/exclamation nil))
               ("\\*.*\\*" ; bold emphasis
                (0 'helios/font/bold-emphasis t))
@@ -699,20 +699,34 @@ emacs --daemon
       ;; press q to return to dashboard
       (evil-local-set-key 'normal (kbd "q") 'helios)
 
-      ;; enable jumping forward and backward between days with arrow keys
-      ;; in main thread
-      (when (string= buffer-name "main")
-        (evil-local-set-key 'normal (kbd "<")
-                            `(lambda ()
-                               (interactive)
-                               (when (re-search-forward "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" nil t)
-                                 (recenter 0))))
-        (evil-local-set-key 'normal (kbd ">")
-                            `(lambda ()
-                               (interactive)
-                               (when (re-search-backward "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" nil t)
-                                 (recenter 0)))))
-      ;; in recall threads
+      (if (string= buffer-name "main")
+          ;; enable jumping forward/backward between days with arrow keys in main thread
+          (progn
+            (evil-local-set-key 'normal (kbd "<")
+                                `(lambda ()
+                                   (interactive)
+                                   (when (re-search-forward "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" nil t)
+                                     (recenter 0))))
+            (evil-local-set-key 'normal (kbd ">")
+                                `(lambda ()
+                                   (interactive)
+                                   (when (re-search-backward "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" nil t)
+                                     (recenter 0)))))
+        ;; jump to main thread instance in other threads with enter key
+        (progn
+          (evil-local-set-key 'normal (kbd "RET")
+                              (lambda ()
+                                (interactive)
+                                ;; get current line and trim it
+                                (let ((line (string-trim (thing-at-point 'line t))))
+                                  ;; spawn main thread and switch to it
+                                  (helios/buffer/spawn "main" #'helios/thread/content (assoc "main" helios/threads))
+                                  (switch-to-buffer "*helios/main*")
+                                  ;; search for line and jump to it
+                                  (when (search-forward line nil t)
+                                    (recenter 0)))))))
+
+      ;; enable arrow key day navigation in recall threads
       (when (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" buffer-name)
         (evil-local-set-key 'normal (kbd "<")
                             `(lambda ()
@@ -849,12 +863,11 @@ emacs --daemon
 (defun helios/recall/view ()
   "helios recall view"
   (insert (propertize "recall\n" 'font-lock-face 'helios/font/h2))
-  (dolist (entry (assoc "main" helios/threads))
-    ;; render only dates of recalls
-    (if (listp entry)
-        (when (string-match "^@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" (car (last entry)))
-          (insert (match-string 1 (car (last entry))))
-          (insert "\n"))))
+  ;; loop over recalls
+  (dolist (entry (cdr (assoc "recall" helios/threads)))
+    ;; insert without leading @
+    (insert (substring (car (last entry)) 1))
+    (insert "\n"))
   ;; switch to buffer and bind enter key for selections
   (switch-to-buffer (current-buffer))
   (evil-local-set-key 'normal (kbd "RET") #'helios/recall/thread/spawn))
@@ -925,25 +938,23 @@ emacs --daemon
 
 (defun helios/recall/thread/navigate (current-day &optional direction)
   "navigate between helios recall threads"
+  ;; init found flag and get recalls
   (let ((found nil)
-        (main (assoc "main" helios/threads)))
+        (recall (cdr (assoc "recall" helios/threads))))
     ;; reverse if going forwards in time with >
     (if direction
-        (setq main (reverse main)))
-    ;; loop through chunks in main
-    (dolist (entry main)
-      (when (listp entry)
-        ;; this is the next day, either forward or backward depending on direction
-        (when (and
-               (string-match "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" (car (last entry)))
-               found)
-          ;; reset flag and spawn recall thread of the next day
-          (setq found nil)
-          ;; use the match string from above for the buffer name
-          (helios/buffer/spawn (match-string 1 (car (last entry))) #'helios/recall/thread/content entry))
-        ;; set flag when at the current day
-        (when (string-match-p (regexp-quote current-day) (car (last entry)))
-          (setq found t))))))
+        (setq recall (reverse recall)))
+    ;; loop through recalls
+    (dolist (entry recall)
+      ;; this is the next/previous day, depending on direction
+      (when found
+        ;; reset flag
+        (setq found nil)
+        ;; spawn recall thread using date without @ for buffer name
+        (helios/buffer/spawn (substring (car (last entry)) 1) #'helios/recall/thread/content entry))
+      ;; set flag when at current day
+      (when (string-match-p (regexp-quote current-day) (car (last entry)))
+        (setq found t)))))
 
 ;;; TODO
 (defun helios/todo/view ()
@@ -988,9 +999,9 @@ emacs --daemon
                   (push todo upcoming))
               ;; not urgent so don't do anything... yet
               (push todo others)))
-        ;; also push to urgent if todo contains !
+        ;; also push to urgent if todo contains !!
         ;; otherwise push to others
-        (if (string-match ".*!.*" (car todo))
+        (if (string-match ".*!!.*" (car todo))
             (push todo urgent)
           (push todo others))))
     ;; reconstruct todo list with urgent items in front
