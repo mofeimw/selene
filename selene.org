@@ -270,7 +270,7 @@ emacs --daemon
   "helios dashboard quote section"
   ;; pick a random quote
   (when (> (length helios/quotes) 0)
-    (let* ((quote (nth (random (length helios/quotes)) helios/quotes)))
+    (let ((quote (nth (random (length helios/quotes)) helios/quotes)))
       (insert (format "\"%s\"\n" quote)))))
 
 (defun helios/dashboard/reminders ()
@@ -342,9 +342,6 @@ emacs --daemon
   ;; don't suppress to main by default
   (setq helios/parser/suppress nil)
 
-  ;; parse threads
-  (helios/parser/threads line)
-
   ;; state-based parsing
   (cond
    ;; normal state
@@ -359,30 +356,23 @@ emacs --daemon
   (unless (or (string= line "") helios/parser/suppress)
     (helios/threads/add "main" line)))
 
-(defun helios/parser/threads (line)
-  "helios parse threads"
-  (let ((start 0))
-    ;; loop through to find all threads
-    (while (string-match "#\\([a-zA-Z0-9_-]+\\)" line start)
-      ;; extract name of thread and append to it
-      (let ((thread (match-string 1 line)))
-        (helios/threads/add thread line))
-      ;; move start flag to end of match
-      (setq start (match-end 0)))))
-
 (defun helios/parser/state/normal (line)
   "helios parser normal state"
   (cond
    ;; comment
    ((string-match "^;;.*$" line) nil)
 
-   ;; command
-   ((string-match "^.*#{\\([a-zA-Z0-9_-]+\\)}.*$" line)
-    (helios/parser/command line))
-
    ;; chunk
    ((string-match "^~.*$" line)
     (helios/parser/chunk line))
+
+   ;; threads
+   ((string-match "#[a-zA-Z0-9_-]+" line)
+    (helios/parser/threads line))
+
+   ;; command
+   ((string-match "^.*#{\\([a-zA-Z0-9_-]+\\)}.*$" line)
+    (helios/parser/command line))
 
    ;; blank line
    ((string= line "")
@@ -401,6 +391,17 @@ emacs --daemon
     ;; buffer line and suppress
     (push line helios/parser/buffer)
     (setq helios/parser/suppress t))))
+
+(defun helios/parser/threads (line)
+  "helios parse threads"
+  (let ((start 0))
+    ;; loop through to find all threads
+    (while (string-match "#\\([a-zA-Z0-9_-]+\\)" line start)
+      ;; extract name of thread and append to it
+      (let ((thread (match-string 1 line)))
+        (helios/threads/add thread line))
+      ;; move start flag to end of match
+      (setq start (match-end 0)))))
 
 (defun helios/parser/command (line)
   "helios parse command"
@@ -464,7 +465,11 @@ emacs --daemon
         ;; exit chunk state
         (setq helios/parser/state 'normal))
     ;; inside chunk
-    (push line helios/parser/chunk)))
+    (progn
+      ;; parse for threads still
+      (helios/parser/threads line)
+      ;; add to chunk
+      (push line helios/parser/chunk))))
 
 ;;; COMMANDS
 (defun helios/command/countdown (args)
@@ -585,11 +590,11 @@ emacs --daemon
         ;; loop over every block
         (while (string-match "\\[\\([0-9]+:[0-9]+\\)\\(?:-\\([0-9]+:[0-9]+\\)\\)?\\s-+\\(.*?\\)\\]" blocks start)
           ;; extract start time, end time, and event
-          (let* ((start-time-string (match-string 1 blocks))
-                 (end-time-string (match-string 2 blocks))
-                 (start-time '())
-                 (end-time '())
-                 (event (match-string 3 blocks)))
+          (let ((start-time-string (match-string 1 blocks))
+                (end-time-string (match-string 2 blocks))
+                (start-time '())
+                (end-time '())
+                (event (match-string 3 blocks)))
             ;; update the start position to regex match end for next iteration
             (setq start (match-end 0))
 
@@ -843,6 +848,7 @@ emacs --daemon
 ;;; RECALL
 (defun helios/recall/view ()
   "helios recall view"
+  (insert (propertize "recall\n" 'font-lock-face 'helios/font/h2))
   (dolist (entry (assoc "main" helios/threads))
     ;; render only dates of recalls
     (if (listp entry)
@@ -1002,9 +1008,9 @@ emacs --daemon
 
 (defun helios/calendar/svg (content-function &optional args)
   "render calendar in svg"
-  (let* ((svg)
-         (inhibit-read-only t)
-         (inhibit-message t))
+  (let ((svg)
+        (inhibit-read-only t)
+        (inhibit-message t))
     ;; render svg content using content function
     ;; call with arguments if passed
     (if args
@@ -1222,9 +1228,9 @@ emacs --daemon
       ;; loop over each day of week
       (dotimes (i 7)
         ;; calculate coordinates and filter out events from the day
-        (let* ((x (+ 30 (* i cell-width)))
-               (y 90)
-               (events (seq-filter (lambda (event) (equal (car event) current-date)) helios/events)))
+        (let ((x (+ 30 (* i cell-width)))
+              (y 90)
+              (events (seq-filter (lambda (event) (equal (car event) current-date)) helios/events)))
           ;; render month/day centered in box
           (svg-text svg
                     (format "%d/%d" (car current-date) (cadr current-date))
@@ -1606,8 +1612,8 @@ emacs --daemon
 (defun helios/utility/to-military-time (time)
   "convert time to military time"
   ;; convert hour and minute values to strings
-  (let* ((hour-string (number-to-string (car time)))
-         (minute-string (number-to-string (cdr time))))
+  (let ((hour-string (number-to-string (car time)))
+        (minute-string (number-to-string (cdr time))))
     ;; add leading 0 to minutes if necessary
     (if (= (length minute-string) 1)
         (setq minute-string (concat "0" minute-string)))
