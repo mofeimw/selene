@@ -3,7 +3,6 @@
 ** shell script
 #+begin_src shell :tangle ~/selene.sh :tangle-mode (identity #o755)
 #!/bin/sh
-#
 if [ "$1" = "launcher" ]; then
     if [ $(ps aux | grep -v grep | grep -ci "emacsclient") -eq 0 ]; then
         emacsclient -c
@@ -108,10 +107,7 @@ emacs --daemon
   '((t (:foreground "#8b7694")))
   "helios inactive font")
 
-;; these globals cannot be reset on file reload
 (defvar helios/file "~/helios.nyx")
-(defvar helios/midnight nil)
-(defvar helios/watchdog nil)
 (defvar helios/timers '())
 
 (defun helios ()
@@ -161,7 +157,8 @@ emacs --daemon
           (helios/parser line)
           (forward-line 1)))
       ;; flush out buffer
-      (helios/parser "")))
+      (helios/parser ""))
+    (message "[helios] parsed %s" file))
 
   ;; setup after loading file
   (helios/todo/sort)
@@ -175,12 +172,14 @@ dashboard
 #+begin_src emacs-lisp :tangle ~/helios/dashboard.el
 (defun helios/dashboard ()
   "load helios dashboard"
+  (interactive)
   ;; set left margin to 2/5 of window width
   (setq margin-left (* (/ (window-total-width) 5) 2))
   ;; responsive - if window width is less than 100, set margin to 1/3 of width
   (when (< (window-total-width) 100)
     (setq margin-left (/ (window-total-width) 3)))
 
+  ;; get or create helios buffer
   (with-current-buffer (get-buffer-create "*helios*")
     ;; inhibit read only in buffer and render dashboard
     (let ((inhibit-read-only t))
@@ -344,7 +343,6 @@ parser
    ;; normal state
    ((eq helios/parser/state 'normal)
     (helios/parser/state/normal line))
-
    ;; chunk state
    ((eq helios/parser/state 'chunk)
     (helios/parser/state/chunk line)))
@@ -417,7 +415,6 @@ parser
   "helios parse chunk opening"
   ;; enter chunk state
   (setq helios/parser/state 'chunk)
-
   ;; suppress ~
   (setq helios/parser/suppress t)
 
@@ -1698,20 +1695,22 @@ utilities
 
 (defun helios/utility/watchdog ()
   "keep helios file up-to-date"
-  ;; make sure only one timer instance is ever running
   ;; watch file for changes and reload
-  (unless helios/watchdog
-    (setq helios/watchdog (file-notify-add-watch
-                           helios/file
-                           '(change)
-                           (lambda (event)
-                             (helios/load-file)))))
-  ;; reload helios every day at midnight
-  (unless helios/midnight
-    ;; timers are triggered immediately if past the time set
-    ;; so this will also initialize helios on startup
-    (setq helios/midnight (run-at-time "0:00" t (lambda ()
-                                                  (helios))))))
+  (file-notify-add-watch
+   helios/file
+   '(change)
+   (lambda (event)
+     ;; delay by 1 second to let filesystem catchup
+     (run-with-timer 1 nil
+                     (lambda (action)
+                       ;; restart the watcher if stopped
+                       (if (eq action 'stopped)
+                           (helios/utility/watchdog)
+                         ;; otherwise load file
+                         (helios/load-file)))
+                     ;; pass in the change action
+                     (cadr event))))
+  (message "[helios] watchdog watching"))
 #+end_src
 
 ** init.el
@@ -1786,15 +1785,14 @@ helios
 (load-file "~/helios/helios.el")
 (require 'helios)
 
-;; spawn helios watchdog during startup
+;; reload helios every day at midnight
+;; timers are triggered immediately if past the time set
+;; so this will also initialize helios on startup
+(add-hook 'emacs-startup-hook (lambda ()
+                                (run-at-time "0:00" t (lambda ()
+                                                        (helios/load-file)))))
+;; hook helios watchdog on startup
 (add-hook 'emacs-startup-hook #'helios/utility/watchdog)
-;; switch to helios dashboard buffer created by midnight timer on launch
-(add-hook 'window-setup-hook
-          (lambda ()
-            ;; running after idle ensures all startup processes have completed
-            (run-with-idle-timer 0.5 nil
-                                 (lambda ()
-                                   (switch-to-buffer "*helios*")))))
 #+end_src
 
 mac specific settings
@@ -1851,7 +1849,7 @@ misc.
       "! p" #'flycheck-previous-error
 
       "+" #'selene/anchor
-      "@" #'helios)
+      "@" #'helios/dashboard)
 #+end_src
 
 evil
