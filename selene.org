@@ -31,6 +31,7 @@ emacs --daemon
 
 ** helios
 #+begin_src emacs-lisp :tangle ~/helios/helios.el :mkdirp yes
+;; -*- lexical-binding: t; -*-
 (require 'cl-lib)
 (require 'calendar)
 (require 'svg)
@@ -1758,6 +1759,7 @@ utilities
 ** config.el
 *** general settings
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+;; -*- lexical-binding: t; -*-
 (setq doom-theme 'nyx
       doom-font (font-spec :family "Fira Code" :size 13 :height 1.0)
       doom-variable-pitch-font (font-spec :family "Palatino" :height 1.4)
