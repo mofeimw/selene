@@ -1700,8 +1700,8 @@ utilities
    helios/file
    '(change)
    (lambda (event)
-     ;; delay by 1 second to let filesystem catchup
-     (run-with-timer 1 nil
+     ;; delay to let filesystem catch up
+     (run-with-timer 0.5 nil
                      (lambda (action)
                        ;; restart the watcher if stopped
                        (if (eq action 'stopped)
@@ -1785,14 +1785,14 @@ helios
 (load-file "~/helios/helios.el")
 (require 'helios)
 
-;; reload helios every day at midnight
-;; timers are triggered immediately if past the time set
-;; so this will also initialize helios on startup
-(add-hook 'emacs-startup-hook (lambda ()
-                                (run-at-time "0:00" t (lambda ()
-                                                        (helios/load-file)))))
-;; hook helios watchdog on startup
+;; load helios on startup
+(add-hook 'emacs-startup-hook #'helios/load-file)
+;; and then watch for changes
 (add-hook 'emacs-startup-hook #'helios/utility/watchdog)
+
+;; reload helios every day at midnight
+;; 24:00 indicates the next midnight, whereas 00:00 would indicate the passed midnight
+(run-at-time "24:00" t #'helios/load-file)
 #+end_src
 
 mac specific settings
