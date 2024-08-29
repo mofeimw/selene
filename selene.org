@@ -108,7 +108,6 @@ emacs --daemon
   "helios inactive font")
 
 (defvar helios/file "~/helios.nyx")
-(defvar helios/timers '())
 
 (defun helios ()
   "helios"
@@ -1662,9 +1661,10 @@ utilities
 
 (defun helios/utility/schedule-notifications ()
   "schedule notifications"
-  ;; cancel previously set timers
-  (dolist (timer helios/timers)
-    (cancel-timer timer))
+  ;; cancel previously set timers and reset to empty
+  (when helios/timers
+    (dolist (timer helios/timers)
+      (cancel-timer timer)))
   (setq helios/timers '())
 
   ;; get current time
@@ -1792,7 +1792,8 @@ helios
 
 ;; reload helios every day at midnight
 ;; 24:00 indicates the next midnight, whereas 00:00 would indicate the passed midnight
-(run-at-time "24:00" t #'helios/load-file)
+;; repeat every 86400 seconds, which is exactly 24 hours
+(run-at-time "24:00" 86400 #'helios/load-file)
 #+end_src
 
 mac specific settings
