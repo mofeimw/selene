@@ -108,6 +108,7 @@ emacs --daemon
   "helios inactive font")
 
 (defvar helios/file "~/helios.nyx")
+(defvar helios/timers '())
 
 (defun helios ()
   "helios"
@@ -1661,10 +1662,9 @@ utilities
 
 (defun helios/utility/schedule-notifications ()
   "schedule notifications"
-  ;; cancel previously set timers and reset to empty
-  (when helios/timers
-    (dolist (timer helios/timers)
-      (cancel-timer timer)))
+  ;; cancel previously set timers and reset
+  (dolist (timer helios/timers)
+    (cancel-timer timer))
   (setq helios/timers '())
 
   ;; get current time
