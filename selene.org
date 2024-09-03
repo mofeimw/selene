@@ -140,7 +140,9 @@ emacs --daemon
     (setq helios/todo/active 0)
 
     (setq helios/calendar/date (calendar-current-date))
-    (setq helios/calendar/period 'month))
+    (setq helios/calendar/period 'month)
+
+    (setq helios/current-time (current-time)))
 
   ;; use default file if not including
   (let ((file (or include helios/file)))
@@ -1711,6 +1713,20 @@ utilities
                      ;; pass in the change action
                      (cadr event))))
   (message "[helios] watchdog watching"))
+
+(defun helios/utility/backup ()
+  "back up helios"
+  ;; format the last datetime known to helios
+  (let* ((date-string (format-time-string "%m-%d-%Y" helios/current-time))
+         ;; get backup path
+         (backup-folder "~/helios/backups")
+         (backup-file (expand-file-name (concat date-string ".nyx") backup-folder)))
+    ;; make backup folder if it doesn't exist
+    (unless (file-directory-p backup-folder)
+      (make-directory backup-folder t))
+    ;; copy over and log
+    (copy-file helios/file backup-file t)
+    (message "[helios] backed up %s" (concat date-string ".nyx"))))
 #+end_src
 
 ** init.el
@@ -1781,7 +1797,6 @@ utilities
 
 helios
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-;; load helios
 (load-file "~/helios/helios.el")
 (require 'helios)
 
@@ -1789,6 +1804,9 @@ helios
 (add-hook 'emacs-startup-hook #'helios/load-file)
 ;; and then watch for changes
 (add-hook 'emacs-startup-hook #'helios/utility/watchdog)
+
+;; back up helios every day
+(run-at-time "23:59" 86400 #'helios/utility/backup)
 
 ;; reload helios every day at midnight
 ;; 24:00 indicates the next midnight, whereas 00:00 would indicate the passed midnight
