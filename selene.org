@@ -3,29 +3,32 @@
 ** shell script
 #+begin_src shell :tangle ~/selene.sh :tangle-mode (identity #o755)
 #!/bin/sh
+emacs="/Applications/Emacs.app/Contents/MacOS/Emacs"
+emacsclient="/Applications/Emacs.app/Contents/MacOS/bin/emacsclient"
+
 if [ "$1" = "launcher" ]; then
     if [ $(ps aux | grep -v grep | grep -ci "emacsclient") -eq 0 ]; then
-        emacsclient -c
+        $emacsclient -c
     fi
-    emacsclient -e  "(select-frame-set-input-focus (selected-frame))"
+    $emacsclient -e  "(select-frame-set-input-focus (selected-frame))"
     exit
 elif [ "$1" = "diff" ]; then
     diff ~/selene.org ~/selene/selene.org
     exit
 elif [ "$1" = "tangle" ]; then
-    emacsclient -e '(org-babel-tangle-file "~/selene.org")'
+    $emacsclient -e '(org-babel-tangle-file "~/selene.org")'
     exit
 elif [ "$1" = "kill" ]; then
-    emacsclient -e "(kill-emacs)"
+    $emacsclient -e "(kill-emacs)"
     exit
 elif [ "$1" = "restart" ]; then
-    emacsclient -e "(kill-emacs)"
+    $emacsclient -e "(kill-emacs)"
 elif [ "$1" = "retangle" ]; then
-    emacsclient -e '(org-babel-tangle-file "~/selene.org")'
-    emacsclient -e "(kill-emacs)"
+    $emacsclient -e '(org-babel-tangle-file "~/selene.org")'
+    $emacsclient -e "(kill-emacs)"
 fi
 
-emacs --daemon
+$emacs --daemon
 #+end_src
 
 ** helios
@@ -1095,6 +1098,7 @@ calendar
               :x (/ 1400 2)
               :y 30
               :fill "#b4f9f8"
+              :font-family "Yrsa, serif"
               :font-size 30
               :font-weight "bold"
               :text-anchor "middle")
@@ -1106,6 +1110,7 @@ calendar
                   (nth i day-names)
                   :x (+ (/ cell-width 2) 20 (* i cell-width))
                   :y 60
+                  :font-family "Yrsa, serif"
                   :font-size 18
                   :fill "#bb9af7"
                   :text-anchor "middle")))
@@ -1182,6 +1187,7 @@ calendar
                       :x x
                       :y start-y
                       :fill day-color
+                      :font-family "Yrsa, serif"
                       :font-size 18)
 
             ;; onto the next day
@@ -1216,6 +1222,7 @@ calendar
               :x (/ 1400 2)
               :y 30
               :fill "#b4f9f8"
+              :font-family "Yrsa, serif"
               :font-size 25
               :font-weight "bold"
               :text-anchor "middle")
@@ -1227,6 +1234,7 @@ calendar
                   (nth i day-names)
                   :x (+ (/ cell-width 2) 20 (* i cell-width))
                   :y 60
+                  :font-family "Yrsa, serif"
                   :font-size 18
                   :fill "#bb9af7"
                   :text-anchor "middle")
@@ -1241,7 +1249,7 @@ calendar
                        (+ 20 (* i cell-width))
                        70
                        cell-width
-                       25
+                       30
                        :fill "#18131A"
                        :stroke "#a9b1d6")))
 
@@ -1258,6 +1266,7 @@ calendar
                     (format "%d/%d" (car current-date) (cadr current-date))
                     :x (+ (/ cell-width 2) (* i cell-width))
                     :y y
+                    :font-family "Yrsa, serif"
                     :font-size 18)
           (setq y (+ 30 y))
 
@@ -1314,6 +1323,7 @@ calendar
               :x (/ 1400 2)
               :y y
               :fill "#b4f9f8"
+              :font-family "Yrsa, serif"
               :font-size 25
               :font-weight "bold"
               :text-anchor "middle")
@@ -1325,6 +1335,7 @@ calendar
                 (nth i labels)
                 :x (+ 20 (/ cell-width 2) (* i cell-width) (* i 45))
                 :y y
+                :font-family "Yrsa, serif"
                 :font-size 19
                 :fill "#bb9af7"
                 :text-anchor "middle")
@@ -1429,6 +1440,7 @@ calendar
                             ;; pad to center of block
                             (* block-unit (/ duration 2))
                             5)
+                      :font-family "Yrsa, serif"
                       :font-size 20
                       :text-anchor "middle")))))
     ;; return svg
@@ -1467,6 +1479,7 @@ calendar
                   line
                   :x x
                   :y line-y
+                  :font-family "Yrsa, serif"
                   :font-size font-size
                   :fill color)
         ;; update y-coordinate with line height padding
@@ -1737,7 +1750,7 @@ utilities
 ;; -*- lexical-binding: t; -*-
 (doom! :input
 
-       :completion company ivy vertico
+       :completion company ivy
 
        :ui doom (emoji +unicode) hl-todo modeline ophints
            (popup +defaults) (vc-gutter +pretty) vi-tilde-fringe workspaces zen
@@ -1751,7 +1764,7 @@ utilities
        :checkers syntax
 
        :tools biblio debugger docker ein (eval +overlay) lookup lsp
-              magit make pdf rgb tmux tree-sitter upload
+              magit make pdf tmux tree-sitter upload
 
        :os (:if IS-MAC macos) tty
 
@@ -1772,6 +1785,8 @@ utilities
 (package! mixed-pitch)
 (package! devdocs)
 (package! olivetti)
+
+(package! savehist :disable t)
 #+end_src
 
 ** config.el
@@ -1780,7 +1795,7 @@ utilities
 ;; -*- lexical-binding: t; -*-
 (setq doom-theme 'nyx
       doom-font (font-spec :family "Fira Code" :size 13 :height 1.0)
-      doom-variable-pitch-font (font-spec :family "Palatino" :height 1.4)
+      doom-variable-pitch-font (font-spec :family "Yrsa")
 
       confirm-kill-emacs nil
       display-line-numbers-type 'relative
