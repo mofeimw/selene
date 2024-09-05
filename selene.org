@@ -1,34 +1,60 @@
 #+title: selene: greek goddess of the moon
 #+author: mofei
-** shell script
+** shell scripts
+build emacs
+#+begin_src shell :tangle ~/build-emacs.sh :tangle-mode (identity #o755)
+#!/bin/sh
+git clone https://git.savannah.gnu.org/git/emacs.git --branch emacs-29 --single-branch
+cd emacs
+git checkout emacs-29
+# or checkout desired version
+
+./autogen.sh
+
+./configure --with-native-compilation --with-json --with-tree-sitter --with-cairo --with-xwidgets --without-dbus
+
+# nproc for number of cores to speed build along
+# gmake builds emacs executable in src folder
+gmake -j$(nproc)
+# gmake install creates self contained .app, but i don't need
+
+# add binaries to path -> .zshrc
+export PATH="$PATH:$HOME/emacs/src"
+# emacsclient is in lib-src
+export PATH="$PATH:$HOME/emacs/lib-src"
+#+end_src
+
+selene
 #+begin_src shell :tangle ~/selene.sh :tangle-mode (identity #o755)
 #!/bin/sh
-emacs="/Applications/Emacs.app/Contents/MacOS/Emacs"
-emacsclient="/Applications/Emacs.app/Contents/MacOS/bin/emacsclient"
-
 if [ "$1" = "launcher" ]; then
+    # skhd doesn't recognize path
+    emacsclient="$HOME/emacs/lib-src/emacsclient"
+    # check if emacsclient is not already open
     if [ $(ps aux | grep -v grep | grep -ci "emacsclient") -eq 0 ]; then
-        $emacsclient -c
+        # create a new frame connected to server and focus it
+        $emacsclient -c -e  "(select-frame-set-input-focus (selected-frame))"
     fi
+    # focus existing window
     $emacsclient -e  "(select-frame-set-input-focus (selected-frame))"
     exit
 elif [ "$1" = "diff" ]; then
     diff ~/selene.org ~/selene/selene.org
     exit
 elif [ "$1" = "tangle" ]; then
-    $emacsclient -e '(org-babel-tangle-file "~/selene.org")'
+    emacsclient -e '(org-babel-tangle-file "~/selene.org")'
     exit
 elif [ "$1" = "kill" ]; then
-    $emacsclient -e "(kill-emacs)"
+    emacsclient -e "(kill-emacs)"
     exit
 elif [ "$1" = "restart" ]; then
-    $emacsclient -e "(kill-emacs)"
+    emacsclient -e "(kill-emacs)"
 elif [ "$1" = "retangle" ]; then
-    $emacsclient -e '(org-babel-tangle-file "~/selene.org")'
-    $emacsclient -e "(kill-emacs)"
+    emacsclient -e '(org-babel-tangle-file "~/selene.org")'
+    emacsclient -e "(kill-emacs)"
 fi
 
-$emacs --daemon
+emacs --daemon
 #+end_src
 
 ** helios
@@ -1785,8 +1811,6 @@ utilities
 (package! mixed-pitch)
 (package! devdocs)
 (package! olivetti)
-
-(package! savehist :disable t)
 #+end_src
 
 ** config.el
@@ -1818,10 +1842,13 @@ helios
 (load-file "~/helios/helios.el")
 (require 'helios)
 
-;; load helios on startup
-(add-hook 'emacs-startup-hook #'helios/load-file)
-;; and then watch for changes
-(add-hook 'emacs-startup-hook #'helios/utility/watchdog)
+;; load helios and start watchdog on startup
+(add-hook 'emacs-startup-hook (lambda ()
+                                ;; running after idle ensures all startup processes have completed
+                                (run-with-idle-timer 0.5 nil
+                                                     (lambda ()
+                                                       (helios/load-file)
+                                                       (helios/utility/watchdog)))))
 
 ;; back up helios every day
 (run-at-time "23:59" 86400 #'helios/utility/backup)
@@ -1838,26 +1865,6 @@ mac specific settings
   ;; make command [⌘] => meta & option [⌥] => super
   (setq mac-command-modifier 'meta)
   (setq mac-option-modifier 'super))
-#+end_src
-
-fix focus when starting emacsclient
-https://korewanetadesu.com/emacs-on-os-x.html
-#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(when (featurep 'ns)
-  (defun ns-raise-emacs ()
-    "Raise Emacs."
-    (ns-do-applescript "tell application \"Emacs\" to activate"))
-
-  (defun ns-raise-emacs-with-frame (frame)
-    "Raise Emacs and select the provided frame."
-    (with-selected-frame frame
-      (when (display-graphic-p)
-        (ns-raise-emacs))))
-
-  (add-hook 'after-make-frame-functions 'ns-raise-emacs-with-frame)
-
-  (when (display-graphic-p)
-    (ns-raise-emacs)))
 #+end_src
 
 popup rules
