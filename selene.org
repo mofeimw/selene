@@ -1828,6 +1828,7 @@ utilities
 (package! mixed-pitch)
 (package! devdocs)
 (package! olivetti)
+(package! leetcode)
 #+end_src
 
 ** config.el
@@ -2019,9 +2020,10 @@ org mode code block fix parentheses mismatch
             (modify-syntax-entry ?> "." org-mode-syntax-table)))
 #+end_src
 
-misc.
+disable problematic packages
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(remove-hook 'doom-first-input-hook #'evil-snipe-mode) ; evil s functionality
+(remove-hook 'doom-first-input-hook #'evil-snipe-mode) ; overrides evil mode s
+(remove-hook 'doom-first-input-hook #'savehist-mode) ; crashes on startup
 #+end_src
 
 *** org
