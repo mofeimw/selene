@@ -777,7 +777,26 @@ buffers
                                 (switch-to-buffer "*helios/thread/main*")
                                 ;; search for line and jump to it
                                 (when (search-forward line nil t)
-                                  (recenter 0)))))))))
+                                  (recenter 0))))))
+
+      ;; mark todos as completed quicker
+      (when (string= buffer-name "todo")
+        ;; press d to copy the command to mark todo done
+        (evil-local-set-key 'normal (kbd "d")
+                            (lambda ()
+                              (interactive)
+                              ;; get todo item under point
+                              (let ((line (string-trim (thing-at-point 'line t))))
+                                ;; remove the bullet
+                                (setq line (replace-regexp-in-string "• " "" line))
+                                ;; either replace the date with an x
+                                (if (string-match "\\[.*\\]" line)
+                                    (setq line (replace-regexp-in-string "\\[.*\\]" "[x]" line))
+                                  ;; or if undated, add it to the end
+                                  (setq line (concat line " [x]")))
+                                ;; set up command and copy it
+                                (setq line (concat "#{todo} " line))
+                                (kill-new line))))))))
 
 (defun helios/buffer/hook ()
   "helios buffer hook"
@@ -798,11 +817,10 @@ buffers
         (face-remap-add-relative 'mode-line '((:height 1300))))
 
     ;; reset mode/header lines if current buffer isn't helios dashboard
-    (progn
-      (custom-set-faces
-       '(mode-line ((t (:inherit mode-line))))
-       '(mode-line-inactive ((t (:inherit mode-line-inactive))))
-       '(header-line ((t nil))))))
+    (custom-set-faces
+     '(mode-line ((t (:inherit mode-line))))
+     '(mode-line-inactive ((t (:inherit mode-line-inactive))))
+     '(header-line ((t nil)))))
 
   ;; enable helios minor mode in all helios buffers
   (if (string-match "^\*helios" (buffer-name))
@@ -1931,9 +1949,9 @@ disable control-scroll zooming in accidentally
 #+end_src
 
 *** functions
-change hook
+hook buffer changes
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(defun selene/on-change ()
+(defun selene/buffer-change ()
   ;; ignore helios buffers
   (unless (string-match "^\*helios" (buffer-name))
     ;; comfy line height for comfy serif font
@@ -1959,7 +1977,7 @@ change hook
       (setq-local display-line-numbers nil)
       (visual-line-mode t)
       (set-window-margins (selected-window) 4 4))
-    (advice-add 'basic-save-buffer :after (lambda (_) (selene/on-change)))))
+    (advice-add 'basic-save-buffer :after (lambda (_) (selene/buffer-change)))))
 #+end_src
 
 run programs in vterm
@@ -2007,7 +2025,7 @@ anchor
 *** hooks
 on buffer list change
 #+begin_src emacs-lisp :tangle ~/.config/doom/config.el
-(add-hook 'buffer-list-update-hook 'selene/on-change)
+(add-hook 'buffer-list-update-hook 'selene/buffer-change)
 #+end_src
 
 2 space tab in lisp modes
