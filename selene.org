@@ -88,9 +88,7 @@ emacs --daemon
   (if helios-mode
       (progn
         (mixed-pitch-mode 1)
-        (setq-local evil-normal-state-cursor "#18131B")
-        ;; disable line numbers
-        (setq-local display-line-numbers nil))
+        (setq-local evil-normal-state-cursor "#18131B"))
     (progn
       (mixed-pitch-mode -1)
       (setq-local evil-normal-state-cursor '("#b4f9f8" box)))))
@@ -784,26 +782,27 @@ buffers
 (defun helios/buffer/hook ()
   "helios buffer hook"
   ;; check when current buffer is helios dashboard and use header/mode lines as top/bottom padding
-  (when (string-equal (buffer-name) "*helios*")
-    ;; empty header line, set background color to match background and jack up height
-    (setq-local header-line-format '(" "))
-    (custom-set-faces
-     '(header-line ((t (:background "#18131B" :foreground "#18131B"))))
-     '(header-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
-    (face-remap-add-relative 'header-line '((:height 1300)))
-    ;; empty mode line, set background color to match background and jack up height
-    (setq-local mode-line-format '(" "))
-    (custom-set-faces
-     '(mode-line ((t (:background "#18131B" :foreground "#18131B"))))
-     '(mode-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
-    (face-remap-add-relative 'mode-line '((:height 1300))))
+  (if (string-equal (buffer-name) "*helios*")
+      (progn
+        ;; empty header line, set background color to match background and jack up height
+        (setq-local header-line-format '(" "))
+        (custom-set-faces
+         '(header-line ((t (:background "#18131B" :foreground "#18131B"))))
+         '(header-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
+        (face-remap-add-relative 'header-line '((:height 1300)))
+        ;; empty mode line, set background color to match background and jack up height
+        (setq-local mode-line-format '(" "))
+        (custom-set-faces
+         '(mode-line ((t (:background "#18131B" :foreground "#18131B"))))
+         '(mode-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
+        (face-remap-add-relative 'mode-line '((:height 1300))))
 
-  ;; reset mode/header lines if current buffer isn't helios dashboard
-  (unless (string-equal (buffer-name) "*helios*")
-    (custom-set-faces
-     '(mode-line ((t (:inherit mode-line))))
-     '(mode-line-inactive ((t (:inherit mode-line-inactive))))
-     '(header-line ((t nil)))))
+    ;; reset mode/header lines if current buffer isn't helios dashboard
+    (progn
+      (custom-set-faces
+       '(mode-line ((t (:inherit mode-line))))
+       '(mode-line-inactive ((t (:inherit mode-line-inactive))))
+       '(header-line ((t nil))))))
 
   ;; enable helios minor mode in all helios buffers
   (if (string-match "^\*helios" (buffer-name))
@@ -1510,6 +1509,11 @@ calendar
     (if (not (string-empty-p line))
         (push line lines))
 
+    ;; emphasize important
+    (cond
+     ((string-match "!!" str) (setq color "#f7768e"))
+     ((string-match "!" str) (setq color "#ff9e64")))
+
     ;; loop through chopped up lines to render
     (dolist (line (reverse lines))
       ;; don't exceed line allowance
@@ -1840,7 +1844,7 @@ utilities
       doom-variable-pitch-font (font-spec :family "Yrsa")
 
       confirm-kill-emacs nil
-      display-line-numbers-type 'relative
+      display-line-numbers-type nil
 
       comfy-modes '(org-mode devdocs-mode))
 
@@ -1933,18 +1937,26 @@ change hook
   ;; ignore helios buffers
   (unless (string-match "^\*helios" (buffer-name))
     ;; comfy line height for comfy serif font
-    (when (member major-mode comfy-modes)
-      (mixed-pitch-mode 1)
-      (setq-local line-spacing 6))
-    (when (not (member major-mode comfy-modes))
-      (mixed-pitch-mode -1)
-      (setq-local line-spacing 6)))
+    (if (member major-mode comfy-modes)
+        (progn
+          (mixed-pitch-mode 1)
+          (setq-local line-spacing 6))
+      (progn
+        (mixed-pitch-mode -1)
+        (setq-local line-spacing 6)
+        ;; enable relative line numbers
+        (setq display-line-numbers 'relative))))
+
+  ;; hide line numbers in messages
+  (if (string= (buffer-name) "*Messages*")
+      (setq display-line-numbers nil))
 
   ;; check if .nyx file
   (when (buffer-file-name)
     (when (string= (file-name-extension (buffer-file-name)) "nyx")
       (mixed-pitch-mode 1)
       (setq-local line-spacing 6)
+      (setq-local display-line-numbers nil)
       (visual-line-mode t)
       (set-window-margins (selected-window) 4 4))
     (advice-add 'basic-save-buffer :after (lambda (_) (selene/on-change)))))
