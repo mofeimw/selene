@@ -100,7 +100,7 @@ emacs --daemon
   '((t (:foreground "#b4f9f8" :weight bold :height 210)))
   "helios header 2 font")
 (defface helios/font/h4
-  '((t (:foreground "#bb9af7" :weight bold :height 200)))
+  '((t (:foreground "#bb9af7" :weight bold :height 180)))
   "helios header 4 font")
 (defface helios/font/quote
   '((t (:foreground "#bb9af7" :slant italic :height 222 :family "Yrsa")))
@@ -109,7 +109,7 @@ emacs --daemon
   '((t (:foreground "#f7768e" :height 144 :family "Annie Use Your Telescope")))
   "helios reminder font")
 (defface helios/font/code
-  '((t (:foreground "#7aa2f7" :height 145 :family "Fira Code")))
+  '((t (:foreground "#7aa2f7" :height 138 :family "Fira Code")))
   "helios monospace/code font")
 (defface helios/font/exclamation
   '((t (:foreground "#f7768e")))
@@ -129,11 +129,14 @@ emacs --daemon
 (defface helios/font/emphasis
   '((t (:foreground "#b4f9f8")))
   "helios emphasis font")
+(defface helios/font/emphasis2
+  '((t (:foreground "#7aa2f7")))
+  "helios emphasis font 2")
 (defface helios/font/bold-emphasis
   '((t (:foreground "#b4f9f8" :weight bold)))
   "helios bold emphasis font")
 (defface helios/font/inactive
-  '((t (:foreground "#8b7694")))
+  '((t (:foreground "#745f7d")))
   "helios inactive font")
 
 (defvar helios/file "~/helios.nyx")
@@ -247,6 +250,8 @@ dashboard
            (0 'helios/font/exclamation t))
           ("\\[.*\\]"
            (0 'helios/font/emphasis t))
+          ("{.*}"
+           (0 'helios/font/emphasis2 t))
           ("\\[.* day.*\\]"
            (0 'helios/font/exclamation t))))
   (setq font-lock-defaults '(helios-dashboard-font-lock))
@@ -322,12 +327,14 @@ dashboard
   ;; insert heading if there are threads
   (if (> (length helios/threads) 0)
       (insert "threads\n"))
-  (let ((count 0))
+  ;; limit to 5 threads
+  (let ((n 5)
+        (count 0))
     (catch 'break
       ;; loop over threadkeys list
       (mapcar (lambda (pair)
-                ;; break to only show first 4 threads
-                (when (> count 3)
+                ;; break to only show first n threads
+                (when (>= count n)
                   (throw 'break nil))
                 (let* ((word (car pair))
                        (letter (cdr pair))
@@ -349,23 +356,45 @@ dashboard
 
 (defun helios/dashboard/todo ()
   "helios dashboard todo section"
-  ;; insert heading if there are active todos
-  (if (> helios/todo/active 0)
-      (insert "todo\n"))
-  ;; loop over todos
-  (let ((count 0))
-    (catch 'break
-      (dolist (todo helios/todo)
-        ;; break to only show first 4 todos
-        (when (> count 3)
-          (throw 'break nil))
-        ;; insert todo bullet if active
-        (unless (string= "x" (cdr todo))
-          (setq count (+ count 1))
-          ;; format depending on whether deadline is provided
-          (if (string-empty-p (cdr todo))
-              (insert (format "• %s\n" (car todo)))
-            (insert (format "• %s [%s]\n" (car todo) (cdr todo)))))))))
+  ;; show only 6 featured todos
+  (let* ((featured)
+         (featured-important)
+         (featured-dated)
+         (featured-other)
+         (n 6)
+         ;; get all todos, sorted and classified
+         (all (helios/todo/sort))
+         ;; separate into classes
+         (important (cdr (assoc "important" all)))
+         (dated (cdr (assoc "dated" all)))
+         (other (cdr (assoc "other" all))))
+
+    ;; if n > length of list, seq-take just returns all
+    ;; display priority is dated->important->other
+    ;; get first n from dated todos
+    (setq featured-dated (seq-take dated n))
+    ;; check if there are any dated todos
+    (when (> (length featured-dated) 0)
+      ;; append to featured
+      (setq featured (append featured featured-dated))
+      ;; update n to the amount of featured todos remaining
+      (setq n (- n (length featured-dated))))
+    ;; if n is negative, seq-take returns nil
+    ;; repeat for important todos
+    (setq featured-important (seq-take important n))
+    (when (> (length featured-important) 0)
+      (setq featured (append featured featured-important))
+      (setq n (- n (length featured-important))))
+    ;; and lastly, all other todos
+    (setq featured-other (seq-take other n))
+    (when (> (length featured-other) 0)
+      (setq featured (append featured featured-other)))
+
+    ;; insert heading if there are active todos
+    (if (> helios/todo/active 0)
+        (insert "todo\n"))
+    ;; insert featured todos
+    (helios/todo/view/render-group featured)))
 #+end_src
 
 parser
@@ -442,7 +471,8 @@ parser
          ;; grab symbol of command function
          (command-function (intern (concat "helios/command/" command)))
          ;; remove command tag from line and trim, considering remainder as arguments
-         (args (string-trim (replace-regexp-in-string "#{.*}" "" line))))
+         ;; ? makes match nongreedy, retaining any other {} as arguments
+         (args (string-trim (replace-regexp-in-string "#{.*?}" "" line))))
     ;; check if command function is bound and call with arguments or log warning
     (if (fboundp command-function)
         (funcall command-function args)
@@ -529,50 +559,73 @@ commands
 
 (defun helios/command/todo (args)
   "helios todo command"
-  ;; test if arguments contain optional brackets
-  (if (string-match "\\[\\(.*\\)\\]" args)
-      ;; extract bracket contents and consider remains as task
-      (let* ((bracket-contents (match-string 1 args))
-             (task (string-trim (replace-regexp-in-string (format "\\[%s\\]" bracket-contents) "" args))))
-        ;; switch conditional cases cascade down
-        (cond
-         ;; [x] indicates marking todo as completed
-         ((string= bracket-contents "x")
-          ;; set found flag to false
-          (let ((found nil))
-            ;; loop over all todos
-            (dolist (item helios/todo)
-              ;; set found flag to true and mark todo as completed when found
-              ;; decrement to keep count of active uncompleted todos
-              (when (string= task (car item))
-                (setq found t)
-                (setcdr item "x")
-                (setq helios/todo/active (- helios/todo/active 1))))
-            ;; log warning if todo was never found
-            (unless found
-              (message "[helios|todo] task not found: %s" task))
-            ;; remove from calendar
-            (setq helios/events (delq (rassoc task helios/events) helios/events))))
+  (let* ((group-name)
+         (group))
+    ;; extract group name, if applicable
+    (if (string-match "{\\(.*\\)}" args)
+        (setq group-name (match-string 1 args)))
+    ;; assoc group from helios/todo
+    ;; nil is the key for ungrouped todos
+    (setq group (assoc group-name helios/todo))
+    ;; test if arguments contain optional brackets
+    (if (string-match "\\[\\(.*\\)\\]" args)
+        ;; extract bracket contents and consider remaining as task
+        (let* ((bracket-contents (match-string 1 args))
+               (task (string-trim (replace-regexp-in-string (format "\\[%s\\]" bracket-contents) "" args))))
+          ;; switch conditional cases cascade down
+          (cond
+           ;; [x] indicates marking todo as completed
+           ((string= bracket-contents "x")
+            ;; set found flag to false
+            (let ((found nil))
+              ;; loop over all todos
+              (if group
+                  (dolist (item (cdr group))
+                    ;; set found flag to true and mark todo as completed when found
+                    ;; decrement to keep count of active uncompleted todos
+                    (when (string= task (car item))
+                      (setq found t)
+                      (setcdr item '("x"))
+                      (setq helios/todo/active (- helios/todo/active 1))))
+                (message "[helios|todo] group does not exist: %s" task))
+              ;; log warning if todo was never found
+              (unless found
+                (message "[helios|todo] task not found: %s" task))
+              ;; remove from calendar
+              (setq helios/events (delq (rassoc (concat "• " task) helios/events) helios/events))))
 
-         ;; deadline in the form of date with . or / separators and month, day, year order
-         ((string-match "[0-9]+\\([/.]\\)[0-9]+\\1[0-9]+" bracket-contents)
-          ;; push cons cell of task and date string to todos
-          (push (cons task bracket-contents) helios/todo)
-          ;; add parsed date to calendar
-          (push (cons (helios/utility/parse-date bracket-contents) task) helios/events)
-          ;; keep track of active todos
-          (setq helios/todo/active (+ helios/todo/active 1)))
+           ;; optional deadline in the form of date with . or / separators and month, day, year order
+           ((string-match "[0-9]+\\([/.]\\)[0-9]+\\1[0-9]+" bracket-contents)
+            ;; parse date
+            (let ((date (helios/utility/parse-date bracket-contents)))
+              (if date
+                  (progn
+                    ;; add to group or create new group and add to it
+                    (if group
+                        (setcdr group (cons (cons task date) (cdr group)))
+                      (push (list group-name (cons task date)) helios/todo))
+                    ;; add date to calendar
+                    ;; with bullet to mark as task
+                    (push (cons date (concat "• " task)) helios/events)
+                    ;; keep track of active todos
+                    (setq helios/todo/active (+ helios/todo/active 1)))
+                ;; date parse failed
+                (message "[helios|todo] invalid date: %s" args))))
 
-         ;; catchall indicates no valid syntax was matched
-         ;; invalid syntax - log warning
-         (t
-          (message "[helios|todo] invalid syntax: %s" args))))
+           ;; catchall indicates no valid syntax was matched
+           ;; invalid syntax - log warning
+           (t
+            (message "[helios|todo] invalid syntax: %s" args))))
 
-    ;; with no brackets, simply push task with no deadline
-    (progn
-      (push (cons (string-trim args) "") helios/todo)
-      ;; make sure to update todo count
-      (setq helios/todo/active (+ helios/todo/active 1)))))
+      ;; with no brackets, simply push task with no deadline
+      (progn
+        ;; add to group or create new group
+        ;; '() or nil indicates no deadline
+        (if group
+            (setcdr group (cons (cons (string-trim args) '()) (cdr group)))
+          (push (list group-name (cons (string-trim args) '())) helios/todo))
+        ;; make sure to update todo count
+        (setq helios/todo/active (+ helios/todo/active 1))))))
 
 (defun helios/command/reminder (args)
   "helios reminder command"
@@ -710,8 +763,6 @@ buffers
                (0 'helios/font/bold-emphasis t))
               ("#[[:alnum:]]+" ; thread tags
                (0 'helios/font/thread-highlight t))
-              ("#{[[:alnum:]]+}" ; command tags
-               (0 'helios/font/command-highlight t))
               ("\".*\"" ; quotes (remove formatting)
                (0 'default t))
               ("^;;.*$" ; comments
@@ -720,10 +771,14 @@ buffers
                (0 'helios/font/chunk-recall t))
               ("^\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" ; daily recall dates
                (0 'helios/font/chunk-recall t))
-              ("\\[.*\\]" ; normal todo items
+              ("\\[.*\\]" ; normal todo deadlines
                (0 'helios/font/emphasis t))
-              ("\\[.* day.*\\]" ; urgent todo items
-               (0 'helios/font/exclamation t))))
+              ("\\[.* day.*\\]" ; urgent todo deadlines
+               (0 'helios/font/exclamation t))
+              ("{.*}" ; todo groups
+               (0 'helios/font/emphasis2 t))
+              ("#{[[:alnum:]]+}" ; command tags
+               (0 'helios/font/command-highlight t))))
       (setq font-lock-defaults '(helios-thread-font-lock))
       (font-lock-mode 1)
 
@@ -795,7 +850,7 @@ buffers
                                   ;; or if undated, add it to the end
                                   (setq line (concat line " [x]")))
                                 ;; set up command and copy it
-                                (setq line (concat "#{todo} " line))
+                                (setq line (concat "\n#{todo} " line))
                                 (kill-new line))))))))
 
 (defun helios/buffer/hook ()
@@ -808,13 +863,13 @@ buffers
         (custom-set-faces
          '(header-line ((t (:background "#18131B" :foreground "#18131B"))))
          '(header-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
-        (face-remap-add-relative 'header-line '((:height 1300)))
+        (face-remap-add-relative 'header-line '((:height 888)))
         ;; empty mode line, set background color to match background and jack up height
         (setq-local mode-line-format '(" "))
         (custom-set-faces
          '(mode-line ((t (:background "#18131B" :foreground "#18131B"))))
          '(mode-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
-        (face-remap-add-relative 'mode-line '((:height 1300))))
+        (face-remap-add-relative 'mode-line '((:height 500))))
 
     ;; reset mode/header lines if current buffer isn't helios dashboard
     (custom-set-faces
@@ -1027,52 +1082,98 @@ todo
 (defun helios/todo/view ()
   "helios todo view"
   (insert (propertize "todo\n" 'font-lock-face 'helios/font/h2))
-  (let ((completed '()))
-    ;; loop over todos and save them for later if they are completed or insert into buffer if not
-    (dolist (todo helios/todo)
-      (if (string= "x" (cdr todo))
-          (push (car todo) completed)
-        (if (string-empty-p (cdr todo))
-            (insert (format "• %s\n" (car todo)))
-          (insert (format "• %s [%s]\n" (car todo) (cdr todo))))))
+  ;; insert ungrouped todos
+  (let ((todos (assoc nil helios/todo)))
+    (helios/todo/view/render-group (cdr todos)))
 
-    ;; render completed heading if there are completed todos
-    (if (> (length completed) 0)
-        (insert (propertize "\ncompleted\n" 'font-lock-face 'helios/font/h4)))
-    ;; loop and insert the completed todos in, greyed out
+  ;; insert all other grouped todos
+  (dolist (group helios/todo)
+    ;; don't insert ungrouped todos again
+    (when (car group)
+      (insert (propertize (concat (car group) "\n") 'font-lock-face 'helios/font/h4))
+      (helios/todo/view/render-group (cdr group)))))
+
+(defun helios/todo/view/render-group (group)
+  "render group of todos"
+  ;; save completed todos for the end
+  (let ((completed '()))
+    ;; loop over todos
+    (dolist (todo group)
+      ;; set aside completed todos
+      (if (equal (cdr todo) '("x"))
+          (push (car todo) completed)
+        ;; render dated todos
+        (if (cdr todo)
+            ;; format date string and calculate days between
+            (let* ((date (cdr todo))
+                   (date-string (format "%d.%d.%d" (nth 0 date) (nth 1 date) (nth 2 date)))
+                   (days-between (- (calendar-absolute-from-gregorian date)
+                                    (calendar-absolute-from-gregorian (calendar-current-date)))))
+              ;; upcoming items are in the next 10 days
+              (when (<= days-between 10)
+                ;; update date string accordingly
+                (if (= days-between 1)
+                    (setq date-string (format "%d day" days-between))
+                  (setq date-string (format "%d days" days-between))))
+              ;; insert with date in brackets
+              (insert (format "• %s [%s]\n" (car todo) date-string)))
+          ;; render undated todos
+          (insert (format "• %s\n" (car todo))))))
+
+    ;; render completed todos greyed out
     (dolist (todo completed)
-      (insert (propertize (format "• %s\n" todo) 'font-lock-face 'helios/font/inactive)))))
+      (insert (propertize (format "• %s\n" todo) 'font-lock-face 'helios/font/inactive)))
+    (insert "\n")))
 
 (defun helios/todo/sort ()
   "sort helios todos"
-  (let ((upcoming '())
-        (urgent '())
-        (others '()))
-    (dolist (todo helios/todo)
-      ;; test if date deadline is set
-      (if (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\)" (cdr todo))
-          ;; extract separator (. or /) and parse date and calculate days until then
-          (let* ((date (helios/utility/parse-date (cdr todo)))
-                 (days-between (- (calendar-absolute-from-gregorian date)
-                                  (calendar-absolute-from-gregorian (calendar-current-date)))))
-            ;; upcoming items are in the next 10 days
-            (if (< days-between 11)
-                (progn
-                  ;; change the deadline component to the number of days remaining
-                  ;; make sure the grammar matches plural/singular
-                  (if (= days-between 1)
-                      (setcdr todo (format "%d day" days-between))
-                    (setcdr todo (format "%d days" days-between)))
-                  (push todo upcoming))
-              ;; not urgent so don't do anything... yet
-              (push todo others)))
-        ;; also push to urgent if todo contains !!
-        ;; otherwise push to others
-        (if (string-match ".*!!.*" (car todo))
-            (push todo urgent)
-          (push todo others))))
-    ;; reconstruct todo list with urgent items in front
-    (setq helios/todo (append (nreverse urgent) (nreverse upcoming) (nreverse others)))))
+  ;; keep track of all todo classes regardless of group
+  (let* ((all-important '())
+         (all-dated '())
+         (all-other '()))
+    ;; loop over each group
+    (dolist (group helios/todo)
+      ;; separate into classes
+      (let ((important '())
+            (dated '())
+            (other '())
+            (done '()))
+        ;; loop over todos in group
+        (dolist (todo (cdr group))
+          ;; set aside important todos
+          (if (string-match ".*!!.*" (car todo))
+              (push todo important)
+            ;; set aside dated todos
+            (if (= (length (cdr todo)) 3)
+                (push todo dated)
+              ;; set aside completed todos
+              (if (equal (cdr todo) '("x"))
+                  (push todo done)
+                ;; and set aside everything else
+                (push todo other)))))
+
+        ;; sort the dated todos
+        (sort dated (lambda (a b)
+                      (time-less-p (helios/utility/date-list-to-time (cdr a))
+                                   (helios/utility/date-list-to-time (cdr b)))))
+
+        ;; reconstruct in sorted, prioritized order
+        (setf (cdr group) (append (reverse important) dated (reverse other) (reverse done)))
+
+        ;; retain all but completed todos
+        (setq all-important (append all-important important))
+        (setq all-dated (append all-dated dated))
+        (setq all-other (append all-other other))))
+
+    ;; sort ALL dated todos
+    (sort all-dated (lambda (a b)
+                      (time-less-p (helios/utility/date-list-to-time (cdr a))
+                                   (helios/utility/date-list-to-time (cdr b)))))
+
+    ;; return amalgamated assoc list of classes
+    (list (append '("important") all-important)
+          (append '("dated") all-dated)
+          (append '("other") all-other))))
 #+end_src
 
 calendar
@@ -1217,17 +1318,12 @@ calendar
               (when (equal date-list (car event))
                 ;; don't overflow cell
                 (when (< line-count cell-max-lines)
-                  ;; change color if todo
-                  (let ((color "#a9b1d6"))
-                    ;; use assoc to check if event is a todo task
-                    (if (assoc (cdr event) helios/todo)
-                        (setq color "#7aa2f7"))
-                    ;; render with wrapped line breaks
-                    (setq result (helios/calendar/svg/wrapped-text (cdr event)
-                                                                   ;; pass in allowance of remaining lines
-                                                                   24 (- cell-max-lines line-count)
-                                                                   x y
-                                                                   16 color)))
+                  ;; render with wrapped line breaks
+                  (setq result (helios/calendar/svg/wrapped-text (cdr event)
+                                                                 ;; pass in allowance of remaining lines
+                                                                 25 (- cell-max-lines line-count)
+                                                                 x y
+                                                                 16 "#a9b1d6"))
                   ;; keep track of next available y-coordinate after rendering
                   (setq y (car result))
                   ;; as well as updated line count
@@ -1335,15 +1431,11 @@ calendar
 
           ;; render events of the day
           (dolist (event events)
-            ;; change color if todo by using assoc to search todo cons cells
-            (let ((color "#a9b1d6"))
-              (if (assoc (cdr event) helios/todo)
-                  (setq color "#7aa2f7"))
-              ;; render with wrapped line breaks and update returned y-coordinate, the car component
-              (setq y (car (helios/calendar/svg/wrapped-text (cdr event)
-                                                             24 10
-                                                             x y
-                                                             17 color))))
+            ;; render with wrapped line breaks and update returned y-coordinate, the car component
+            (setq y (car (helios/calendar/svg/wrapped-text (cdr event)
+                                                           25 10
+                                                           x y
+                                                           17 "#a9b1d6")))
             (setq y (+ 15 y)))
 
           ;; move to next day
@@ -1415,7 +1507,7 @@ calendar
     (let ((y y))
       (dolist (event events)
         ;; set aside todos
-        (if (assoc (cdr event) helios/todo)
+        (if (string-match "• " (cdr event))
             (push event todos)
           ;; render with wrapped line breaks and update local coordinate
           (progn
@@ -1730,6 +1822,11 @@ utilities
       (setcdr minutes-before (+ 60 (cdr minutes-before)))
       (setcar minutes-before (- (car minutes-before) 1)))
     minutes-before))
+
+(defun helios/utility/date-list-to-time (date)
+  "convert date as list to time object"
+  (date-to-time (format "%d-%d-%d 00:00:00"
+                        (nth 2 date) (nth 0 date) (nth 1 date))))
 
 (defun helios/utility/neutralize-mouse ()
   "neutralize mouse"
