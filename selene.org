@@ -169,8 +169,6 @@ emacs --daemon
     (setq helios/parser/chunk-threads '())
     (setq helios/parser/recall-date nil)
 
-    (setq helios/todo/active 0)
-
     (setq helios/calendar/date (calendar-current-date))
     (setq helios/calendar/period 'month)
 
@@ -390,8 +388,8 @@ dashboard
     (when (> (length featured-other) 0)
       (setq featured (append featured featured-other)))
 
-    ;; insert heading if there are active todos
-    (if (> helios/todo/active 0)
+    ;; insert heading if there are featured todos
+    (if (> (length featured) 0)
         (insert "todo\n"))
     ;; insert featured todos
     (helios/todo/view/render-group featured)))
@@ -564,9 +562,13 @@ commands
     ;; extract group name, if applicable
     (if (string-match "{\\(.*\\)}" args)
         (setq group-name (match-string 1 args)))
-    ;; assoc group from helios/todo
+    ;; get todo group
     ;; nil is the key for ungrouped todos
-    (setq group (assoc group-name helios/todo))
+    (setq group (cl-find-if (lambda (element)
+                              ;; check if the group name matches
+                              ;; caar being (car (car)), or car of the first cons cell
+                              (equal (caar element) group-name))
+                            helios/todo))
     ;; test if arguments contain optional brackets
     (if (string-match "\\[\\(.*\\)\\]" args)
         ;; extract bracket contents and consider remaining as task
@@ -582,11 +584,12 @@ commands
               (if group
                   (dolist (item (cdr group))
                     ;; set found flag to true and mark todo as completed when found
-                    ;; decrement to keep count of active uncompleted todos
                     (when (string= task (car item))
                       (setq found t)
                       (setcdr item '("x"))
-                      (setq helios/todo/active (- helios/todo/active 1))))
+                      ;; decrease active count of todos in group
+                      ;; uncompleted count is stored in the cdr of the first cons cell
+                      (setcdr (car group) (- (cdar group) 1))))
                 (message "[helios|todo] group does not exist: %s" task))
               ;; log warning if todo was never found
               (unless found
@@ -600,15 +603,18 @@ commands
             (let ((date (helios/utility/parse-date bracket-contents)))
               (if date
                   (progn
-                    ;; add to group or create new group and add to it
+                    ;; if group already exists
                     (if group
-                        (setcdr group (cons (cons task date) (cdr group)))
-                      (push (list group-name (cons task date)) helios/todo))
+                        ;; add todo to group and increase active count
+                        (progn
+                          (setcdr group (cons (cons task date) (cdr group)))
+                          (setcdr (car group) (+ (cdar group) 1)))
+                      ;; otherwise, make a new list for group and add as cons cell
+                      ;; first element is a cons cell of group name and active count
+                      (push (list (cons group-name 1) (cons task date)) helios/todo))
                     ;; add date to calendar
                     ;; with bullet to mark as task
-                    (push (cons date (concat "• " task)) helios/events)
-                    ;; keep track of active todos
-                    (setq helios/todo/active (+ helios/todo/active 1)))
+                    (push (cons date (concat "• " task)) helios/events))
                 ;; date parse failed
                 (message "[helios|todo] invalid date: %s" args))))
 
@@ -618,14 +624,15 @@ commands
             (message "[helios|todo] invalid syntax: %s" args))))
 
       ;; with no brackets, simply push task with no deadline
+      ;; '()/nil indicates no deadline
       (progn
-        ;; add to group or create new group
-        ;; '() or nil indicates no deadline
         (if group
-            (setcdr group (cons (cons (string-trim args) '()) (cdr group)))
-          (push (list group-name (cons (string-trim args) '())) helios/todo))
-        ;; make sure to update todo count
-        (setq helios/todo/active (+ helios/todo/active 1))))))
+            ;; add to group and increase count if group exists
+            (progn
+              (setcdr group (cons (cons (string-trim args) '()) (cdr group)))
+              (setcdr (car group) (+ (cdar group) 1)))
+          ;; or make new group sublist and start counter at 1
+          (push (list (cons group-name 1) (cons (string-trim args) '())) helios/todo))))))
 
 (defun helios/command/reminder (args)
   "helios reminder command"
@@ -1083,21 +1090,23 @@ todo
   "helios todo view"
   (insert (propertize "todo\n" 'font-lock-face 'helios/font/h2))
   ;; render ungrouped todos
-  (let ((ungrouped (assoc nil helios/todo))
-        (completed (assoc "completed" helios/todo/classified)))
-    (helios/todo/view/render-group (cdr ungrouped))
+  ;; car of first cons cell in group should be nil
+  (let ((ungrouped (cdr (cl-find-if (lambda (element) (not (caar element))) helios/todo)))
+        (completed (cdr (assoc "completed" helios/todo/classified))))
+    (helios/todo/view/render-group ungrouped)
 
     ;; render all other todo groups
     (dolist (group helios/todo)
-      ;; don't insert ungrouped todos again
-      (when (car group)
-        (insert (propertize (concat (car group) "\n") 'font-lock-face 'helios/font/h4))
+      ;; make sure it is a group and that it has uncompleted tasks
+      (when (and (caar group) (> (cdar group) 0))
+        (insert (propertize (concat (caar group) "\n") 'font-lock-face 'helios/font/h4))
         (helios/todo/view/render-group (cdr group))))
 
-    ;; render completed todos
-    (insert (propertize "completed\n" 'font-lock-face 'helios/font/h2))
-    (dolist (todo (cdr completed))
-      (insert (propertize (format "× %s\n" (car todo)) 'font-lock-face 'helios/font/inactive)))))
+    ;; render completed todos, if any
+    (when (> (length completed) 0)
+      (insert (propertize "completed\n" 'font-lock-face 'helios/font/h2))
+      (dolist (todo completed)
+        (insert (propertize (format "× %s\n" (car todo)) 'font-lock-face 'helios/font/inactive))))))
 
 (defun helios/todo/view/render-group (group)
   "render group of todos"
