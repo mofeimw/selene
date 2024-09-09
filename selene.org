@@ -136,7 +136,7 @@ emacs --daemon
   '((t (:foreground "#b4f9f8" :weight bold)))
   "helios bold emphasis font")
 (defface helios/font/inactive
-  '((t (:foreground "#745f7d")))
+  '((t (:foreground "#8b7694")))
   "helios inactive font")
 
 (defvar helios/file "~/helios.nyx")
@@ -763,6 +763,8 @@ buffers
                (0 'helios/font/bold-emphasis t))
               ("#[[:alnum:]]+" ; thread tags
                (0 'helios/font/thread-highlight t))
+              ("#{[[:alnum:]]+}" ; command tags
+               (0 'helios/font/command-highlight t))
               ("\".*\"" ; quotes (remove formatting)
                (0 'default t))
               ("^;;.*$" ; comments
@@ -775,10 +777,8 @@ buffers
                (0 'helios/font/emphasis t))
               ("\\[.* day.*\\]" ; urgent todo deadlines
                (0 'helios/font/exclamation t))
-              ("{.*}" ; todo groups
-               (0 'helios/font/emphasis2 t))
-              ("#{[[:alnum:]]+}" ; command tags
-               (0 'helios/font/command-highlight t))))
+              ("•.*\\({.*}\\)" ; todo groups
+               (1 'helios/font/emphasis2 t))))
       (setq font-lock-defaults '(helios-thread-font-lock))
       (font-lock-mode 1)
 
@@ -1082,62 +1082,62 @@ todo
 (defun helios/todo/view ()
   "helios todo view"
   (insert (propertize "todo\n" 'font-lock-face 'helios/font/h2))
-  ;; insert ungrouped todos
-  (let ((todos (assoc nil helios/todo)))
-    (helios/todo/view/render-group (cdr todos)))
+  ;; render ungrouped todos
+  (let ((ungrouped (assoc nil helios/todo))
+        (completed (assoc "completed" helios/todo/classified)))
+    (helios/todo/view/render-group (cdr ungrouped))
 
-  ;; insert all other grouped todos
-  (dolist (group helios/todo)
-    ;; don't insert ungrouped todos again
-    (when (car group)
-      (insert (propertize (concat (car group) "\n") 'font-lock-face 'helios/font/h4))
-      (helios/todo/view/render-group (cdr group)))))
+    ;; render all other todo groups
+    (dolist (group helios/todo)
+      ;; don't insert ungrouped todos again
+      (when (car group)
+        (insert (propertize (concat (car group) "\n") 'font-lock-face 'helios/font/h4))
+        (helios/todo/view/render-group (cdr group))))
+
+    ;; render completed todos
+    (insert (propertize "completed\n" 'font-lock-face 'helios/font/h2))
+    (dolist (todo (cdr completed))
+      (insert (propertize (format "× %s\n" (car todo)) 'font-lock-face 'helios/font/inactive)))))
 
 (defun helios/todo/view/render-group (group)
   "render group of todos"
-  ;; save completed todos for the end
-  (let ((completed '()))
-    ;; loop over todos
-    (dolist (todo group)
-      ;; set aside completed todos
-      (if (equal (cdr todo) '("x"))
-          (push (car todo) completed)
-        ;; render dated todos
-        (if (cdr todo)
-            ;; format date string and calculate days between
-            (let* ((date (cdr todo))
-                   (date-string (format "%d.%d.%d" (nth 0 date) (nth 1 date) (nth 2 date)))
-                   (days-between (- (calendar-absolute-from-gregorian date)
-                                    (calendar-absolute-from-gregorian (calendar-current-date)))))
-              ;; upcoming items are in the next 10 days
-              (when (<= days-between 10)
-                ;; update date string accordingly
-                (if (= days-between 1)
-                    (setq date-string (format "%d day" days-between))
-                  (setq date-string (format "%d days" days-between))))
-              ;; insert with date in brackets
-              (insert (format "• %s [%s]\n" (car todo) date-string)))
-          ;; render undated todos
-          (insert (format "• %s\n" (car todo))))))
-
-    ;; render completed todos greyed out
-    (dolist (todo completed)
-      (insert (propertize (format "• %s\n" todo) 'font-lock-face 'helios/font/inactive)))
-    (insert "\n")))
+  ;; loop over todos
+  (dolist (todo group)
+    ;; ignore completed todos
+    (unless (equal (cdr todo) '("x"))
+      ;; render dated todos
+      (if (cdr todo)
+          ;; format date string and calculate days between
+          (let* ((date (cdr todo))
+                 (date-string (format "%d.%d.%d" (nth 0 date) (nth 1 date) (nth 2 date)))
+                 (days-between (- (calendar-absolute-from-gregorian date)
+                                  (calendar-absolute-from-gregorian (calendar-current-date)))))
+            ;; upcoming items are in the next 10 days
+            (when (<= days-between 10)
+              ;; update date string accordingly
+              (if (= days-between 1)
+                  (setq date-string (format "%d day" days-between))
+                (setq date-string (format "%d days" days-between))))
+            ;; insert with date in brackets
+            (insert (format "• %s [%s]\n" (car todo) date-string)))
+        ;; render undated todos
+        (insert (format "• %s\n" (car todo))))))
+  (insert "\n"))
 
 (defun helios/todo/sort ()
   "sort helios todos"
   ;; keep track of all todo classes regardless of group
   (let* ((all-important '())
          (all-dated '())
-         (all-other '()))
+         (all-other '())
+         (all-completed '()))
     ;; loop over each group
     (dolist (group helios/todo)
       ;; separate into classes
       (let ((important '())
             (dated '())
             (other '())
-            (done '()))
+            (completed '()))
         ;; loop over todos in group
         (dolist (todo (cdr group))
           ;; set aside important todos
@@ -1148,7 +1148,7 @@ todo
                 (push todo dated)
               ;; set aside completed todos
               (if (equal (cdr todo) '("x"))
-                  (push todo done)
+                  (push todo completed)
                 ;; and set aside everything else
                 (push todo other)))))
 
@@ -1158,22 +1158,24 @@ todo
                                    (helios/utility/date-list-to-time (cdr b)))))
 
         ;; reconstruct in sorted, prioritized order
-        (setf (cdr group) (append (reverse important) dated (reverse other) (reverse done)))
+        (setf (cdr group) (append (reverse important) dated (reverse other) (reverse completed)))
 
         ;; retain all but completed todos
         (setq all-important (append all-important important))
         (setq all-dated (append all-dated dated))
-        (setq all-other (append all-other other))))
+        (setq all-other (append all-other other))
+        (setq all-completed (append all-completed completed))))
 
     ;; sort ALL dated todos
     (sort all-dated (lambda (a b)
                       (time-less-p (helios/utility/date-list-to-time (cdr a))
                                    (helios/utility/date-list-to-time (cdr b)))))
 
-    ;; return amalgamated assoc list of classes
-    (list (append '("important") all-important)
-          (append '("dated") all-dated)
-          (append '("other") all-other))))
+    ;; amalgamated assoc list of classes
+    (setq helios/todo/classified (list (append '("important") all-important)
+                                       (append '("dated") all-dated)
+                                       (append '("other") all-other)
+                                       (append '("completed") all-completed)))))
 #+end_src
 
 calendar
@@ -2062,8 +2064,9 @@ hook buffer changes
         ;; enable relative line numbers
         (setq display-line-numbers 'relative))))
 
-  ;; hide line numbers in messages
-  (if (string= (buffer-name) "*Messages*")
+  ;; hide line numbers in messages and vterm
+  (if (or (string= (buffer-name) "*Messages*")
+          (string-match "vterm" (buffer-name)))
       (setq display-line-numbers nil))
 
   ;; check if .nyx file
