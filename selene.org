@@ -88,10 +88,12 @@ emacs --daemon
   (if helios-mode
       (progn
         (mixed-pitch-mode 1)
-        (setq-local evil-normal-state-cursor "#18131B"))
-    (progn
-      (mixed-pitch-mode -1)
-      (setq-local evil-normal-state-cursor '("#b4f9f8" box)))))
+        ;; hide cursor in these buffers
+        (let ((no-cursor-buffers '("*helios*" "*helios/calendar*" "*helios/threads*")))
+          (if (member (buffer-name) no-cursor-buffers)
+              (setq-local evil-normal-state-cursor "#18131B"))))
+    (mixed-pitch-mode -1)
+    (setq-local evil-normal-state-cursor '("#b4f9f8" box))))
 
 (defface helios/font/h1
   '((t (:foreground "#e0af68" :height 600 :family "Egmond")))
@@ -153,7 +155,6 @@ emacs --daemon
   ;; init/reset global variables unless including
   (unless include
     (setq helios/threads '())
-    (setq helios/threadkeys '())
     (setq helios/quotes '())
     (setq helios/reminders '())
     (setq helios/countdown '())
@@ -161,6 +162,10 @@ emacs --daemon
     (setq helios/events '())
     (setq helios/timeblocks '())
     (setq helios/notifications '())
+
+    (setq helios/threads/order '())
+    (setq helios/threads/binds '())
+    (setq helios/threads/map nil)
 
     (setq helios/parser/state 'normal)
     (setq helios/parser/suppress nil)
@@ -213,7 +218,7 @@ dashboard
 
   ;; get or create helios buffer
   (with-current-buffer (get-buffer-create "*helios*")
-    ;; inhibit read only in buffer and render dashboard
+    ;; inhibit read only in buffer to render dashboard
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert "H E L I O S\n")
@@ -260,7 +265,7 @@ dashboard
   (helios/utility/neutralize-mouse)
 
   ;; bind threads
-  (helios/threads/binds/map)
+  (helios/threads/binds/bind)
 
   ;; bind threads view
   (evil-local-set-key 'normal (kbd "1")
@@ -329,28 +334,14 @@ dashboard
   (let ((n 5)
         (count 0))
     (catch 'break
-      ;; loop over threadkeys list
-      (mapcar (lambda (pair)
-                ;; break to only show first n threads
-                (when (>= count n)
-                  (throw 'break nil))
-                (let* ((word (car pair))
-                       (letter (cdr pair))
-                       (match (string-match (regexp-quote letter) word 0)))
-                  ;; insert word formatted to emphasize keybind
-                  (if match
-                      ;; split where first occurance of letter is and piece together
-                      (progn
-                        (insert (substring word 0 (match-beginning 0)))
-                        (insert (propertize letter 'font-lock-face 'helios/font/emphasis))
-                        (insert (substring word (match-end 0))))
-                    ;; or stick letter at the end if it's random and not contained in the word
-                    (progn
-                      (insert word)
-                      (insert (propertize (format "[%s]" letter) 'font-lock-face 'helios/font/emphasis))))
-                  (insert "\n")
-                  (setq count (+ count 1))))
-              helios/threadkeys))))
+      ;; loop over threads list
+      (dolist (thread helios/threads)
+        ;; break if limit reached
+        (when (>= count n)
+          (throw 'break nil))
+        ;; render threadbind
+        (helios/threads/view/bind thread)
+        (setq count (+ count 1))))))
 
 (defun helios/dashboard/todo ()
   "helios dashboard todo section"
@@ -425,28 +416,30 @@ parser
    ((string-match "^~.*$" line)
     (helios/parser/chunk line))
 
-   ;; command
-   ((string-match "#{\\([a-zA-Z0-9_-]+\\)}" line)
-    (helios/parser/command line))
-
-   ;; threads
-   ((string-match "#[a-zA-Z0-9_-]+" line)
-    (helios/parser/threads line))
-
    ;; blank line
    ((string= line "")
     ;; add buffered lines to main thread
     ;; as single line
     (if (= (length helios/parser/buffer) 1)
-        (helios/threads/add "main" (car helios/parser/buffer)))
-    ;; or implicit chunk
-    (if (> (length helios/parser/buffer) 1)
-        (helios/threads/add "main" (append helios/parser/buffer '(""))))
+        (helios/threads/add "main" (car helios/parser/buffer))
+      ;; or implicit chunk
+      (if (> (length helios/parser/buffer) 1)
+          (helios/threads/add "main" (append helios/parser/buffer '("")))))
     ;; clear buffer
     (setq helios/parser/buffer nil))
 
    ;; line
    (t
+    ;; parse commands and threads
+    ;; they must fall here since they can't be blank lines or chunks
+    (cond
+     ;; command
+     ((string-match "#{\\([a-zA-Z0-9_-]+\\)}" line)
+      (helios/parser/command line))
+     ;; threads
+     ((string-match "#[a-zA-Z0-9_-]+" line)
+      (helios/parser/threads line)))
+
     ;; buffer line and suppress
     (push line helios/parser/buffer)
     (setq helios/parser/suppress t))))
@@ -484,7 +477,7 @@ parser
   (setq helios/parser/suppress t)
 
   ;; see if it is plain or elaborate
-  (if (string-match "^~\\s-*\\([@./'# a-zA-Z0-9_-]*\\)$" line)
+  (if (string-match "^~\\s-*\\([@./'#\* a-zA-Z0-9_-]*\\)$" line)
       ;; elaborate (has description)
       (let ((description (match-string 1 line)))
         ;; store extracted description
@@ -524,11 +517,13 @@ parser
         ;; exit chunk state
         (setq helios/parser/state 'normal))
     ;; inside chunk
-    (progn
-      ;; parse for threads still
-      (helios/parser/threads line)
-      ;; add to chunk
-      (push line helios/parser/chunk))))
+    ;; parse for threads still
+    (helios/parser/threads line)
+    ;; as well as commands
+    (if (string-match "#{\\([a-zA-Z0-9_-]+\\)}" line)
+        (helios/parser/command line))
+    ;; add to chunk
+    (push line helios/parser/chunk)))
 #+end_src
 
 commands
@@ -625,14 +620,13 @@ commands
 
       ;; with no brackets, simply push task with no deadline
       ;; '()/nil indicates no deadline
-      (progn
-        (if group
-            ;; add to group and increase count if group exists
-            (progn
-              (setcdr group (cons (cons (string-trim args) '()) (cdr group)))
-              (setcdr (car group) (+ (cdar group) 1)))
-          ;; or make new group sublist and start counter at 1
-          (push (list (cons group-name 1) (cons (string-trim args) '())) helios/todo))))))
+      (if group
+          ;; add to group and increase count if group exists
+          (progn
+            (setcdr group (cons (cons (string-trim args) '()) (cdr group)))
+            (setcdr (car group) (+ (cdar group) 1)))
+        ;; or make new group sublist and start counter at 1
+        (push (list (cons group-name 1) (cons (string-trim args) '())) helios/todo)))))
 
 (defun helios/command/reminder (args)
   "helios reminder command"
@@ -697,12 +691,11 @@ commands
             (if end-time-string
                 ;; parse if given
                 (setq end-time (helios/utility/parse-time end-time-string))
-              (progn
-                ;; deep copy start time
-                (setq end-time (cons (car start-time) (cdr start-time)))
-                (if (<= (car end-time) 24)
-                    ;; otherwise default to 1 hour block
-                    (setcar end-time (+ (car end-time) 1)))))
+              ;; otherwise default to 1 hour block
+              ;; deep copy start time
+              (setq end-time (cons (car start-time) (cdr start-time)))
+              (if (<= (car end-time) 24)
+                  (setcar end-time (+ (car end-time) 1))))
 
             ;; notify today's blocks
             (when (equal date today)
@@ -776,7 +769,7 @@ buffers
                (0 'default t))
               ("^;;.*$" ; comments
                (0 'helios/font/inactive t))
-              ("@.+" ; daily recall chunk descriptions
+              ("@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" ; daily recall chunk descriptions
                (0 'helios/font/chunk-recall t))
               ("^\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" ; daily recall dates
                (0 'helios/font/chunk-recall t))
@@ -789,76 +782,118 @@ buffers
       (setq font-lock-defaults '(helios-thread-font-lock))
       (font-lock-mode 1)
 
-      ;; enable line wrapping, mixed pitch mode
+      ;; enable line wrapping and mixed pitch mode
       (visual-line-mode t)
       (mixed-pitch-mode 1)
       ;; set line spacing and window margins
       (setq-local line-spacing 8)
       (set-window-margins (selected-window) 4 4)
-      ;; press q to return to dashboard
-      (evil-local-set-key 'normal (kbd "q") #'helios/dashboard)
 
-      ;; enable jumping forward/backward between days with arrow keys
-      ;; in main thread
-      (when (string= buffer-name "thread/main")
-        (evil-local-set-key 'normal (kbd "<")
-                            `(lambda ()
-                               (interactive)
-                               (when (re-search-forward "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" nil t)
-                                 (recenter 0))))
-        (evil-local-set-key 'normal (kbd ">")
-                            `(lambda ()
-                               (interactive)
-                               (when (re-search-backward "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" nil t)
-                                 (recenter 0)))))
-      ;; in recall threads
-      (when (string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" buffer-name)
-        (evil-local-set-key 'normal (kbd "<")
-                            `(lambda ()
-                               (interactive)
-                               (helios/recall/thread/navigate ,buffer-name)))
-        (evil-local-set-key 'normal (kbd ">")
-                            `(lambda ()
-                               (interactive)
-                               (helios/recall/thread/navigate ,buffer-name t)))
-        ;; also set b key to go back to list of recall days
-        (evil-local-set-key 'normal (kbd "b")
-                            (lambda ()
-                              (interactive)
-                              (funcall 'helios/buffer/spawn "recall" #'helios/recall/view))))
+      ;; bind keybinds
+      (helios/buffer/bind))))
 
-      ;; jump to main thread instance in other threads with enter key
-      (when (string-match "thread/" buffer-name)
-        (evil-local-set-key 'normal (kbd "RET")
-                            (lambda ()
-                              (interactive)
-                              ;; get current line and trim it
-                              (let ((line (string-trim (thing-at-point 'line t))))
-                                ;; spawn main thread and switch to it
-                                (helios/buffer/spawn "thread/main" #'helios/thread/content (assoc "main" helios/threads))
-                                (switch-to-buffer "*helios/thread/main*")
-                                ;; search for line and jump to it
-                                (when (search-forward line nil t)
-                                  (recenter 0))))))
+(defun helios/buffer/bind ()
+  "bind keybinds in helios buffers"
+  ;; press q to return to dashboard
+  (evil-local-set-key 'normal (kbd "q") #'helios/dashboard)
+  ;; b as well by default
+  (evil-local-set-key 'normal (kbd "b") #'helios/dashboard)
 
-      ;; mark todos as completed quicker
-      (when (string= buffer-name "todo")
-        ;; press d to copy the command to mark todo done
-        (evil-local-set-key 'normal (kbd "d")
-                            (lambda ()
-                              (interactive)
-                              ;; get todo item under point
-                              (let ((line (string-trim (thing-at-point 'line t))))
-                                ;; remove the bullet
-                                (setq line (replace-regexp-in-string "• " "" line))
-                                ;; either replace the date with an x
-                                (if (string-match "\\[.*\\]" line)
-                                    (setq line (replace-regexp-in-string "\\[.*\\]" "[x]" line))
-                                  ;; or if undated, add it to the end
-                                  (setq line (concat line " [x]")))
-                                ;; set up command and copy it
-                                (setq line (concat "\n#{todo} " line))
-                                (kill-new line))))))))
+  ;; handle keybinds based on buffer with cascading cond
+  (cond
+   ;; main thread keybinds
+   ((string= buffer-name "thread/main")
+    ;; enable jumping forward/backward between days with arrow keys
+    (evil-local-set-key 'normal (kbd "<")
+                        `(lambda ()
+                           (interactive)
+                           (when (re-search-forward "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" nil t)
+                             (recenter 0))))
+    (evil-local-set-key 'normal (kbd ">")
+                        `(lambda ()
+                           (interactive)
+                           (when (re-search-backward "@\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" nil t)
+                             (recenter 0))))
+    ;; press b key to return to threads view
+    (evil-local-set-key 'normal (kbd "b")
+                        (lambda ()
+                          (interactive)
+                          (funcall 'helios/buffer/spawn "threads" #'helios/threads/view)))
+    ;; jump to thread with enter key
+    (evil-local-set-key 'normal (kbd "RET")
+                        (lambda ()
+                          (interactive)
+                          ;; get current line and trim it
+                          (let ((line (string-trim (thing-at-point 'line t))))
+                            ;; look for thread
+                            (when (string-match "#\\([a-zA-Z0-9_-]+\\)" line)
+                              ;; extract the first thread found
+                              (let* ((thread-name (match-string 1 line))
+                                     (thread (assoc thread-name helios/threads)))
+                                ;; make sure thread is valid
+                                (when thread
+                                  ;; spawn thread buffer and switch to it
+                                  (helios/buffer/spawn (concat "thread/" thread-name) #'helios/thread/content thread)
+                                  (switch-to-buffer (format "*helios/thread/%s*" thread-name))
+                                  ;; search for line and jump to it
+                                  (when (search-forward line nil t)
+                                    (recenter 0)))))))))
+
+   ;; recall thread keybinds
+   ((string-match "\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" buffer-name)
+    ;; enable jumping forward/backward between days with arrow keys
+    (evil-local-set-key 'normal (kbd "<")
+                        `(lambda ()
+                           (interactive)
+                           (helios/recall/thread/navigate ,buffer-name)))
+    (evil-local-set-key 'normal (kbd ">")
+                        `(lambda ()
+                           (interactive)
+                           (helios/recall/thread/navigate ,buffer-name t)))
+    ;; set b key to return to recall view
+    (evil-local-set-key 'normal (kbd "b")
+                        (lambda ()
+                          (interactive)
+                          (funcall 'helios/buffer/spawn "recall" #'helios/recall/view))))
+
+   ;; thread buffer keybinds
+   ((string-match "thread/" buffer-name)
+    ;; jump to main thread instance in other threads with enter key
+    (evil-local-set-key 'normal (kbd "RET")
+                        (lambda ()
+                          (interactive)
+                          ;; get current line and trim it
+                          (let ((line (string-trim (thing-at-point 'line t))))
+                            ;; spawn main thread and switch to it
+                            (helios/buffer/spawn "thread/main" #'helios/thread/content (assoc "main" helios/threads))
+                            (switch-to-buffer "*helios/thread/main*")
+                            ;; search for line and jump to it
+                            (when (search-forward line nil t)
+                              (recenter 0)))))
+    ;; go back to threads view with b key
+    (evil-local-set-key 'normal (kbd "b")
+                        (lambda ()
+                          (interactive)
+                          (funcall 'helios/buffer/spawn "threads" #'helios/threads/view))))
+
+   ;; todo buffer keybinds
+   ((string= buffer-name "todo")
+    ;; press d to copy the command to mark todo done
+    (evil-local-set-key 'normal (kbd "d")
+                        (lambda ()
+                          (interactive)
+                          ;; get todo item under point
+                          (let ((line (string-trim (thing-at-point 'line t))))
+                            ;; remove the bullet
+                            (setq line (replace-regexp-in-string "• " "" line))
+                            ;; either replace the date with an x
+                            (if (string-match "\\[.*\\]" line)
+                                (setq line (replace-regexp-in-string "\\[.*\\]" "[x]" line))
+                              ;; or if undated, add it to the end
+                              (setq line (concat line " [x]")))
+                            ;; set up command and copy it
+                            (setq line (concat "\n#{todo} " line))
+                            (kill-new line)))))))
 
 (defun helios/buffer/hook ()
   "helios buffer hook"
@@ -877,7 +912,6 @@ buffers
          '(mode-line ((t (:background "#18131B" :foreground "#18131B"))))
          '(mode-line-inactive ((t (:background "#18131B" :foreground "#18131B")))))
         (face-remap-add-relative 'mode-line '((:height 500))))
-
     ;; reset mode/header lines if current buffer isn't helios dashboard
     (custom-set-faces
      '(mode-line ((t (:inherit mode-line))))
@@ -894,13 +928,18 @@ threads
 #+begin_src emacs-lisp :tangle ~/helios/threads.el
 (defun helios/threads/add (thread-name item)
   "add to helios thread"
-  ;; get thread list
   (let ((thread (assoc thread-name helios/threads)))
     (if thread
-        ;; append to thread if already existing
-        (setcdr thread (cons item (cdr thread)))
+        ;; remove thread if already existing
+        (setq helios/threads (assoc-delete-all thread-name helios/threads))
       ;; or create new thread
-      (push (list thread-name item) helios/threads))))
+      (setq thread (list thread-name))
+      ;; store thread creation order
+      (push thread-name helios/threads/order))
+    ;; add new entry to thread
+    (setq thread (cons (car thread) (cons item (cdr thread))))
+    ;; add thread back to maintain last-updated order
+    (push thread helios/threads)))
 
 (defun helios/thread/content (thread)
   "render content for individual helios thread buffers"
@@ -926,63 +965,79 @@ threads
 (defun helios/threads/view ()
   "helios threads view"
   (insert (propertize "threads\n" 'font-lock-face 'helios/font/h2))
-  ;; loop over threads and insert with keybind letter highlighted
-  (mapcar (lambda (pair)
-            (let* ((word (car pair))
-                   (letter (cdr pair))
-                   (match (string-match (regexp-quote letter) word 0)))
-              (if match
-                  (progn
-                    (insert (substring word 0 (match-beginning 0)))
-                    (insert (propertize letter 'font-lock-face 'helios/font/emphasis))
-                    (insert (substring word (match-end 0))))
-                (progn
-                  (insert word)
-                  (insert (propertize (format "[%s]" letter) 'font-lock-face 'helios/font/emphasis))))
-              (insert "\n")))
-          helios/threadkeys)
-  ;; switch to buffer and bind the keys
+  ;; loop over threads and render threadbinds
+  (dolist (thread helios/threads)
+    (helios/threads/view/bind thread))
+  ;; switch to buffer and bind threadbinds
   (switch-to-buffer (current-buffer))
-  (helios/threads/binds/map))
+  (helios/threads/binds/bind))
+
+(defun helios/threads/view/bind (thread)
+  "render threadbind"
+  ;; get name, split it, and then get bind from hashmap
+  (let* ((name (car thread))
+         (letter (substring name 0 1))
+         (other (substring name 1))
+         (bind (gethash name helios/threads/map)))
+    ;; ignore main thread
+    (unless (string= name "main")
+      ;; render name with emphasized first letter
+      (insert (propertize letter 'font-lock-face 'helios/font/emphasis))
+      (insert other)
+      ;; add id number if needed
+      (if (> (length bind) 1)
+          (insert (format " [%s]" (substring bind 1))))
+      (insert "\n"))))
 
 (defun helios/threads/binds/generate ()
-  "find unique keys for threads"
-  ;; use a hash table for efficiency
-  (let ((used-letters (make-hash-table))
-        result)
-    ;; loop in reverse to maintain stability because threads are from most recent first
-    (dolist (thread (reverse helios/threads))
-      ;; loop over chracters to find when they are a letter and not already used
-      ;; or if no options are available, pick the first available letter in alphabet
-      (let* ((name (car thread))
-             (unique-letter (or (cl-loop for char across name
-                                         when (and (cl-position char "abcdefghijklmnopqrstuvwxyz")
-                                                   (not (gethash (downcase char) used-letters)))
-                                         return (downcase char))
-                                (cl-loop for char across "abcdefghijklmnopqrstuvwxyz"
-                                         unless (gethash char used-letters)
-                                         return char))))
-        ;; update hash table and results list
-        (when unique-letter
-          (puthash unique-letter t used-letters)
-          ;; convert from char to string
-          (push (cons name (string unique-letter)) result))))
-    (setq helios/threadkeys result)))
+  "generate threadbinds"
+  (let ((binds '())
+        (map (make-hash-table :test 'equal))
+        (thread-names '()))
+    ;; generate binds in the order threads were created
+    (dolist (thread-name (reverse helios/threads/order))
+      ;; get the first letter and its letterspace
+      (let* ((letter (substring thread-name 0 1))
+             (letterspace (assoc letter binds)))
+        ;; check if there are other threads starting with letter
+        (if letterspace
+            ;; get last used id number
+            (let ((i (car (nth 1 letterspace))))
+              ;; add to letterspace with the next available id number
+              (setcdr letterspace (cons (cons (+ i 1) thread-name) (cdr letterspace))))
+          ;; or make a new letterspace with id 1
+          (push (list letter (cons 1 thread-name)) binds))))
+    (setq helios/threads/binds binds)
 
-(defun helios/threads/binds/map ()
-  "generate keybinds for helios threads"
-  ;; loop over threadkeys
-  (dolist (pair helios/threadkeys)
-    ;; get name and unique letter of thread
-    ;; and then get the thread itself
-    (let* ((name (car pair))
-           (letter (cdr pair))
-           (thread (assoc name helios/threads)))
-      ;; bind the letter key to a lambda function that spawns the thread buffer
-      (evil-local-set-key 'normal (kbd letter)
-                          `(lambda ()
-                             (interactive)
-                             (helios/buffer/spawn (concat "thread/" (car ',thread)) #'helios/thread/content ',thread))))))
+    ;; loop through each letterspace after all threads are processed
+    (dolist (letterspace helios/threads/binds)
+      ;; the letter is the first element
+      (let ((letter (car letterspace)))
+        ;; now loop over all of the binds starting with the letter
+        (dolist (bind (cdr letterspace))
+          ;; get id number and name
+          (let* ((number (car bind))
+                 (name (cdr bind))
+                 ;; create bind - id number is not necessary if it is the only thread starting with the letter
+                 (bind (if (= (length letterspace) 2) letter (format "%s%d" letter number))))
+            ;; add bind to hashmap
+            (puthash name bind map)))))
+    (setq helios/threads/map map)))
+
+(defun helios/threads/binds/bind ()
+  "bind threadbinds"
+  ;; loop through hash map and bind threadbinds
+  (maphash (lambda (thread-name bind)
+             (evil-local-set-key 'normal (kbd bind)
+                                 `(lambda ()
+                                    (interactive)
+                                    (helios/buffer/spawn (concat "thread/" ',thread-name) #'helios/thread/content (assoc ',thread-name helios/threads)))))
+           helios/threads/map)
+  ;; bind * key to access main thread (all threads)
+  (evil-local-set-key 'normal (kbd "*")
+                      `(lambda ()
+                         (interactive)
+                         (helios/buffer/spawn "thread/main" #'helios/thread/content (assoc "main" helios/threads)))))
 #+end_src
 
 recall
@@ -1520,13 +1575,12 @@ calendar
         ;; set aside todos
         (if (string-match "• " (cdr event))
             (push event todos)
-          ;; render with wrapped line breaks and update local coordinate
-          (progn
-            (setq y (car (helios/calendar/svg/wrapped-text (cdr event)
-                                                           45 50
-                                                           x y
-                                                           20 "#a9b1d6")))
-            (setq y (+ 15 y))))))
+          ;; render non-todos with wrapped line breaks and update local coordinate
+          (setq y (car (helios/calendar/svg/wrapped-text (cdr event)
+                                                         45 50
+                                                         x y
+                                                         20 "#a9b1d6")))
+          (setq y (+ 15 y)))))
 
     ;; render todos
     (let ((y y))
@@ -1702,6 +1756,7 @@ calendar
     (when (eq helios/calendar/period 'week)
       ;; fork flow of time
       (if direction
+          ;; forward
           (progn
             ;; check overflow
             (when (> next-week-day days-in-month)
@@ -1712,16 +1767,16 @@ calendar
               (setq next-week-year (if (= next-week-month 1) next-year year)))
             ;; construct new date
             (setq new-date (list next-week-month next-week-day next-week-year)))
-        (progn
-          ;; check overflow
-          (when (< prev-week-day 1)
-            ;; rubber-band to previous month
-            (setq prev-week-day (+ prev-week-day (calendar-last-day-of-month prev-week-month prev-week-year)))
-            (setq prev-week-month prev-month)
-            ;; update year if necessary
-            (setq prev-week-year (if (= prev-week-month 12) prev-year year)))
-          ;; construct new date
-          (setq new-date (list prev-week-month prev-week-day prev-week-year))))
+        ;; backward
+        ;; check overflow
+        (when (< prev-week-day 1)
+          ;; rubber-band to previous month
+          (setq prev-week-day (+ prev-week-day (calendar-last-day-of-month prev-week-month prev-week-year)))
+          (setq prev-week-month prev-month)
+          ;; update year if necessary
+          (setq prev-week-year (if (= prev-week-month 12) prev-year year)))
+        ;; construct new date
+        (setq new-date (list prev-week-month prev-week-day prev-week-year)))
       ;; set svg weekly view as content function
       (setq content-function #'helios/calendar/svg/week))
 
@@ -2029,6 +2084,7 @@ misc.
       "s s" #'(lambda () (interactive) (find-file "~/selene.org"))
       "s h" #'(lambda () (interactive) (find-file "~/helios.nyx"))
       "s o" #'olivetti-mode
+      "s n" #'selene/nightshade
 
       "v" #'+vterm/toggle
       "d" #'devdocs-lookup
@@ -2067,11 +2123,10 @@ hook buffer changes
         (progn
           (mixed-pitch-mode 1)
           (setq-local line-spacing 6))
-      (progn
-        (mixed-pitch-mode -1)
-        (setq-local line-spacing 6)
-        ;; enable relative line numbers
-        (setq display-line-numbers 'relative))))
+      (mixed-pitch-mode -1)
+      (setq-local line-spacing 6)
+      ;; enable relative line numbers
+      (setq display-line-numbers 'relative)))
 
   ;; hide line numbers in messages and vterm
   (if (or (string= (buffer-name) "*Messages*")
@@ -2129,6 +2184,26 @@ anchor
              (if prefix (format "|%d" prefix) "")
              (if anchor "returned" "dropped")
              (line-number-at-pos (point)))))
+#+end_src
+
+nightshade
+#+begin_src emacs-lisp :tangle ~/.config/doom/config.el
+(defvar selene/nightshade nil)
+(defun selene/nightshade ()
+  "stealth mode"
+  (interactive)
+  ;; toggle nightshade stealth mode
+  (if selene/nightshade
+      ;; delete overlay and reset variable
+      (progn
+        (delete-overlay selene/nightshade)
+        (setq selene/nightshade nil)
+        (message "[nightshade] wilting"))
+    ;; make overlay and store it
+    (setq selene/nightshade (make-overlay (point-min) (point-max)))
+    ;; base1 lightened slightly (2 rgb)
+    (overlay-put selene/nightshade 'face '(:foreground "#312835"))
+    (message "[nightshade] blooming")))
 #+end_src
 
 *** hooks
