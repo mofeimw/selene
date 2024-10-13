@@ -295,6 +295,8 @@ dashboard
                       `(lambda ()
                          (interactive)
                          (funcall 'helios/buffer/spawn "calendar" #'helios/calendar/view)))
+  ;; bind search
+  (evil-local-set-key 'normal (kbd "/") #'helios/dashboard/search)
 
   ;; hook into buffer list update
   (add-hook 'buffer-list-update-hook #'helios/buffer/hook))
@@ -351,12 +353,10 @@ dashboard
          (featured-dated)
          (featured-other)
          (n 6)
-         ;; get all todos, sorted and classified
-         (all (helios/todo/sort))
-         ;; separate into classes
-         (important (cdr (assoc "important" all)))
-         (dated (cdr (assoc "dated" all)))
-         (other (cdr (assoc "other" all))))
+         ;; get todo classes
+         (important (cdr (assoc "important" helios/todo/classified)))
+         (dated (cdr (assoc "dated" helios/todo/classified)))
+         (other (cdr (assoc "other" helios/todo/classified))))
 
     ;; if n > length of list, seq-take just returns all
     ;; display priority is dated->important->other
@@ -384,6 +384,32 @@ dashboard
         (insert "todo\n"))
     ;; insert featured todos
     (helios/todo/view/render-group featured)))
+
+(defun helios/dashboard/search ()
+  "search across helios"
+  (interactive)
+  ;; get search input and make empty result assoc list
+  (let ((search (read-string "Search: "))
+        (results '("search")))
+    ;; export search term
+    (setq helios/search search)
+    ;; loop over all entries
+    (dolist (entry (cdr (assoc "main" helios/threads)))
+      ;; check if string or chunk
+      (if (stringp entry)
+          ;; add to results if containing search
+          (when (string-match-p search entry)
+            (setq results (cons (car results) (cons entry (cdr results)))))
+        ;; loop over entries in chunk
+        ;; add entire chunk if search found
+        ;; break to avoid adding chunk multiple times
+        (catch 'break
+          (dolist (item entry)
+            (when (string-match-p search item)
+              (setq results (cons (car results) (cons entry (cdr results))))
+              (throw 'break nil))))))
+    ;; spawn a content buffer with all entries containing search term
+    (helios/buffer/spawn "search" #'helios/thread/content results)))
 #+end_src
 
 parser
@@ -477,7 +503,7 @@ parser
   (setq helios/parser/suppress t)
 
   ;; see if it is plain or elaborate
-  (if (string-match "^~\\s-*\\([@./'#\* a-zA-Z0-9_-]*\\)$" line)
+  (if (string-match "^~\\s-*\\([@./'#\*,() a-zA-Z0-9_-]*\\)$" line)
       ;; elaborate (has description)
       (let ((description (match-string 1 line)))
         ;; store extracted description
@@ -651,15 +677,20 @@ commands
              (time (helios/utility/parse-time event)))
         ;; push as cons cell into events list
         (push (cons date event) helios/events)
-        ;; event is today and contains a time
-        (when (and (equal date today) time)
-          ;; schedule starting notification
-          (push (cons time (format "[%s] is starting" event)) helios/notifications)
-          ;; as well as heads up notifications 5 and 10 minutes before
-          (let ((five-before (helios/utility/minutes-before time 5))
-                (ten-before (helios/utility/minutes-before time 10)))
-            (push (cons five-before (format "[%s] is starting in 5 minutes" event)) helios/notifications)
-            (push (cons ten-before (format "[%s] is starting in 10 minutes" event)) helios/notifications))))
+        ;; event is today
+        (when (equal date today)
+          (if (not time)
+              ;; event does not have a time
+              ;; schedule reminder for noon
+              (push (cons (cons 12 0) (format "[%s] is today" event)) helios/notifications)
+            ;; event has a time
+            ;; schedule starting notification
+            (push (cons time (format "[%s] is starting" event)) helios/notifications)
+            ;; as well as a heads up notifications 10 and 30 minutes before
+            (let ((ten-before (helios/utility/minutes-before time 10))
+                  (thirty-before (helios/utility/minutes-before time 30)))
+              (push (cons ten-before (format "[%s] is starting in 10 minutes" event)) helios/notifications)
+              (push (cons thirty-before (format "[%s] is starting in 30 minutes" event)) helios/notifications)))))
     (message "[helios|schedule] invalid syntax: %s" args)))
 
 (defun helios/command/timeblock (args)
@@ -694,7 +725,7 @@ commands
               ;; otherwise default to 1 hour block
               ;; deep copy start time
               (setq end-time (cons (car start-time) (cdr start-time)))
-              (if (<= (car end-time) 24)
+              (if (< (car end-time) 24)
                   (setcar end-time (+ (car end-time) 1))))
 
             ;; notify today's blocks
@@ -773,14 +804,24 @@ buffers
                (0 'helios/font/chunk-recall t))
               ("^\\([0-9]+\\([/.]\\)[0-9]+\\2[0-9]+\\).*" ; daily recall dates
                (0 'helios/font/chunk-recall t))
+              ("{{.*}}" ; chunk embeds
+               (0 'helios/font/chunk-recall t))
               ("\\[.*\\]" ; normal todo deadlines
                (0 'helios/font/emphasis t))
               ("\\[.* day.*\\]" ; urgent todo deadlines
                (0 'helios/font/exclamation t))
               ("•.*\\({.*}\\)" ; todo groups
                (1 'helios/font/emphasis2 t))))
+      ;; search term
+      (when (string= buffer-name "search")
+        (setq helios-thread-font-lock
+              (append helios-thread-font-lock
+                      `((,helios/search
+                         (0 'helios/font/chunk-recall t))))))
+      ;; set font lock, enable, and refresh
       (setq font-lock-defaults '(helios-thread-font-lock))
       (font-lock-mode 1)
+      (font-lock-refresh-defaults)
 
       ;; enable line wrapping and mixed pitch mode
       (visual-line-mode t)
@@ -790,14 +831,17 @@ buffers
       (set-window-margins (selected-window) 4 4)
 
       ;; bind keybinds
-      (helios/buffer/bind))))
+      (helios/buffer/bind buffer-name))))
 
-(defun helios/buffer/bind ()
+(defun helios/buffer/bind (buffer-name)
   "bind keybinds in helios buffers"
-  ;; press q to return to dashboard
-  (evil-local-set-key 'normal (kbd "q") #'helios/dashboard)
-  ;; b as well by default
-  (evil-local-set-key 'normal (kbd "b") #'helios/dashboard)
+  ;; default binds
+  ;; don't interfere with threadbinds though
+  (unless (string= buffer-name "threads")
+    ;; press q to return to dashboard
+    (evil-local-set-key 'normal (kbd "q") #'helios/dashboard)
+    ;; b as well, by default
+    (evil-local-set-key 'normal (kbd "b") #'helios/dashboard))
 
   ;; handle keybinds based on buffer with cascading cond
   (cond
@@ -859,17 +903,7 @@ buffers
    ;; thread buffer keybinds
    ((string-match "thread/" buffer-name)
     ;; jump to main thread instance in other threads with enter key
-    (evil-local-set-key 'normal (kbd "RET")
-                        (lambda ()
-                          (interactive)
-                          ;; get current line and trim it
-                          (let ((line (string-trim (thing-at-point 'line t))))
-                            ;; spawn main thread and switch to it
-                            (helios/buffer/spawn "thread/main" #'helios/thread/content (assoc "main" helios/threads))
-                            (switch-to-buffer "*helios/thread/main*")
-                            ;; search for line and jump to it
-                            (when (search-forward line nil t)
-                              (recenter 0)))))
+    (helios/buffer/bind/jump-to-main)
     ;; go back to threads view with b key
     (evil-local-set-key 'normal (kbd "b")
                         (lambda ()
@@ -893,7 +927,26 @@ buffers
                               (setq line (concat line " [x]")))
                             ;; set up command and copy it
                             (setq line (concat "\n#{todo} " line))
-                            (kill-new line)))))))
+                            (kill-new line)))))
+
+   ;; search buffer keybinds
+   ((string= buffer-name "search")
+    ;; jump to main thread instance with enter key
+    (helios/buffer/bind/jump-to-main))))
+
+(defun helios/buffer/bind/jump-to-main ()
+  "jump to main thread instance of line under point"
+  (evil-local-set-key 'normal (kbd "RET")
+                      (lambda ()
+                        (interactive)
+                        ;; get current line and trim it
+                        (let ((line (string-trim (thing-at-point 'line t))))
+                          ;; spawn main thread and switch to it
+                          (helios/buffer/spawn "thread/main" #'helios/thread/content (assoc "main" helios/threads))
+                          (switch-to-buffer "*helios/thread/main*")
+                          ;; search for line and jump to it
+                          (when (search-forward line nil t)
+                            (recenter 0))))))
 
 (defun helios/buffer/hook ()
   "helios buffer hook"
@@ -1026,6 +1079,9 @@ threads
 
 (defun helios/threads/binds/bind ()
   "bind threadbinds"
+  ;; reset local evil binds
+  (setq-local evil-normal-state-local-map (make-sparse-keymap))
+  (evil-normalize-keymaps)
   ;; loop through hash map and bind threadbinds
   (maphash (lambda (thread-name bind)
              (evil-local-set-key 'normal (kbd bind)
@@ -1194,7 +1250,8 @@ todo
   (let* ((all-important '())
          (all-dated '())
          (all-other '())
-         (all-completed '()))
+         (all-completed '())
+         (today (calendar-current-date)))
     ;; loop over each group
     (dolist (group helios/todo)
       ;; separate into classes
@@ -1204,19 +1261,26 @@ todo
             (completed '()))
         ;; loop over todos in group
         (dolist (todo (cdr group))
-          ;; set aside important todos
-          (if (string-match ".*!!.*" (car todo))
-              (push todo important)
-            ;; set aside dated todos
-            (if (= (length (cdr todo)) 3)
-                (push todo dated)
-              ;; set aside completed todos
-              (if (equal (cdr todo) '("x"))
-                  (push todo completed)
-                ;; and set aside everything else
-                (push todo other)))))
+          ;; sort todos
+          (cond
+           ;; dated todos
+           ((= (length (cdr todo)) 3)
+            (push todo dated)
+            ;; schedule reminder notifications if todo is due today
+            (when (equal (cdr todo) today)
+              (push (cons (cons 12 0) (format "[%s] has a deadline of today" (car todo))) helios/notifications)
+              (push (cons (cons 19 0) (format "[%s] has a deadline of today" (car todo))) helios/notifications)))
+           ;; important todos
+           ((string-match ".*!!.*" (car todo))
+            (push todo important))
+           ;; completed todos
+           ((equal (cdr todo) '("x"))
+            (push todo completed))
+           ;; everything else
+           (t
+            (push todo other))))
 
-        ;; sort the dated todos
+        ;; sort dated todos
         (sort dated (lambda (a b)
                       (time-less-p (helios/utility/date-list-to-time (cdr a))
                                    (helios/utility/date-list-to-time (cdr b)))))
@@ -1224,7 +1288,7 @@ todo
         ;; reconstruct in sorted, prioritized order
         (setf (cdr group) (append (reverse important) dated (reverse other) (reverse completed)))
 
-        ;; retain all but completed todos
+        ;; classify all todos together
         (setq all-important (append all-important important))
         (setq all-dated (append all-dated dated))
         (setq all-other (append all-other other))
